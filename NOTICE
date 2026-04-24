@@ -1,0 +1,27 @@
+idastone
+Copyright 2026 idastone contributors
+
+This product includes software and patterns derived from:
+
+- AIDE / aideml (WecoAI) — MIT License
+  https://github.com/WecoAI/aideml
+- AgentLaboratory (SamuelSchmidgall) — MIT License
+  https://github.com/SamuelSchmidgall/AgentLaboratory
+- Paper2Code (going-doer) — Apache License 2.0
+  https://github.com/going-doer/Paper2Code
+- OpenHands (All-Hands-AI) — MIT License
+  https://github.com/All-Hands-AI/OpenHands
+- smolagents (HuggingFace) — Apache License 2.0
+  https://github.com/huggingface/smolagents
+- STORM (Stanford OVAL) — MIT License
+  https://github.com/stanford-oval/storm
+- PaperQA / PaperQA2 (Future-House) — Apache License 2.0
+  https://github.com/Future-House/paper-qa
+- Ouroboros (Kargatharaakash fork) — Apache License 2.0
+
+Patterns (but not code) are additionally drawn from:
+
+- AI-Scientist / AI-Scientist-v2 (SakanaAI) — custom license; code not vendored
+- AI-Researcher (HKUDS) — unlicensed; code not vendored
+
+See docs/PORTS.md for file-level attribution of every port.
