@@ -1,0 +1,39 @@
+# idastone — gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.claude/settings.local.json
+
+# Harness runtime — never commit
+**/.claude/memory/workflow.db
+**/.claude/memory/workflow.db-*
+**/.claude/memory/hook.log*
+**/.claude/memory/ntfy_last_seen
+**/.claude/.state/clean-ok-*
+.team-runs/
+
+# User-global paste cache etc. shouldn't land here but belt-and-suspenders
+.claude/file-history/
+.claude/session-env/
+.claude/history.jsonl
