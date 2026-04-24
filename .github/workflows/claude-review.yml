@@ -1,0 +1,128 @@
+name: claude-review
+
+# Triggers: any new PR, pushes to PR branches, and a manual
+# workflow_dispatch so we can re-review after edits without a new push.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to review"
+        required: true
+        type: string
+
+# Only runs on the self-hosted Mac mini with the claude-review label
+# so it picks up the local `claude` binary authed to your Max
+# subscription. GitHub-hosted runners don't have `claude` and would
+# need an API key anyway.
+jobs:
+  review:
+    runs-on: [self-hosted, claude-review]
+    timeout-minutes: 15
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive PR number
+        id: pr
+        run: |
+          if [ -n "${{ github.event.inputs.pr_number }}" ]; then
+            echo "number=${{ github.event.inputs.pr_number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=${{ github.event.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify claude binary
+        run: |
+          if ! command -v claude >/dev/null 2>&1; then
+            echo "::error::'claude' not found on PATH. Add /usr/local/bin (or wherever claude lives) to this runner's .env or to this workflow's env:." >&2
+            exit 1
+          fi
+          claude --version || true
+
+      - name: Fetch PR diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR=${{ steps.pr.outputs.number }}
+          gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" > /tmp/pr-diff.patch
+          # Protect against multi-MB diffs — Claude context is finite.
+          SZ=$(wc -c < /tmp/pr-diff.patch)
+          echo "diff size: $SZ bytes"
+          if [ "$SZ" -gt 400000 ]; then
+            echo "::warning::Diff >400KB; truncating head." >&2
+            head -c 400000 /tmp/pr-diff.patch > /tmp/pr-diff.truncated
+            mv /tmp/pr-diff.truncated /tmp/pr-diff.patch
+          fi
+
+      - name: Run Claude review
+        run: |
+          cat > /tmp/review-prompt.md <<'PROMPT'
+          You are a code reviewer for idastone, an open-source autonomous-
+          research harness. This PR is proposed against `main`. Review the
+          diff below against idastone's contributing rules:
+
+          1. **Composition** — does this duplicate an existing
+             differentiator (pre-run audit, FTS5 [LEARN] DB, waterfall,
+             pre-experiment checklist, ntfy, living-doc pattern,
+             experiment-runs/, /deploy-team, pre-commit sentinel,
+             doc-guard)? Duplicates are rejected.
+          2. **License gate** — does any vendored code come from a repo
+             whose license isn't MIT/Apache-2.0? Flag if so.
+          3. **Security** — check for: shell injection in hooks, SQL
+             injection in direct sqlite3 calls (parameterized queries
+             required), path-traversal in file writes, new network
+             dependencies not in NOTICE.
+          4. **Schema** — any `schema.sql` change must ship a companion
+             `memory/migrations/NNN_*.sql` file.
+          5. **Smoke test** — new user-facing features should add a
+             smoke-test assertion in `tests/smoke-test.sh`.
+          6. **Docs** — user-facing changes update README / CHANGELOG.
+          7. **AI slop** — bloated docstrings, restating comments,
+             single-use helpers, debug prints outside CLIs.
+
+          Produce a concise markdown review:
+          - **Verdict:** APPROVE | CHANGES_REQUESTED | REJECT
+          - **Findings:** numbered list, each with file:line + severity
+            (CRITICAL / MAJOR / MINOR) + suggested fix
+          - **What looks good:** 2-3 bullets max
+          - Be honest. This is the only review that will run.
+
+          Diff follows:
+
+          PROMPT
+          cat /tmp/pr-diff.patch >> /tmp/review-prompt.md
+
+          # --print runs headless; --output-format text is stable for
+          # piping into gh pr comment.
+          claude --print --output-format text < /tmp/review-prompt.md > /tmp/review.md 2>&1 || {
+            echo "::error::claude invocation failed:" >&2
+            cat /tmp/review.md >&2 || true
+            exit 1
+          }
+
+          # Prepend a short header so the comment is recognizable.
+          cat > /tmp/comment.md <<HEADER
+          ## 🤖 Claude review (self-hosted, Max subscription)
+
+          _Generated from the PR diff by the \`claude\` CLI on the
+          idastone self-hosted runner. Run \`gh workflow run claude-review.yml
+          -f pr_number=${{ steps.pr.outputs.number }}\` to re-review after changes._
+
+          ---
+
+          HEADER
+          cat /tmp/review.md >> /tmp/comment.md
+
+      - name: Post review as PR comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR=${{ steps.pr.outputs.number }}
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file /tmp/comment.md
+          echo "posted review on PR #$PR"
