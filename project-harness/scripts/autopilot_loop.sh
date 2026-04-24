@@ -113,17 +113,27 @@ if [ "${1:-}" = "--stop" ]; then
   exit 0
 fi
 
-# Advisory lock: don't start two autopilots on the same project.
-if [ -e "$RUN_LOCK" ]; then
-  if [ -f "$RUN_PIDFILE" ] && kill -0 "$(cat "$RUN_PIDFILE")" 2>/dev/null; then
+# Real lock (not advisory touch-file): acquire an exclusive flock on
+# $RUN_LOCK in a dedicated fd. flock auto-releases on process death,
+# which eliminates the stale-lock-across-reboots issue. On macOS and
+# Linux alike, fd 9 with `exec` + `flock -n` is the canonical idiom.
+exec 9>"$RUN_LOCK"
+if command -v flock >/dev/null 2>&1; then
+  flock -n 9 || {
+    echo "autopilot already running (lock held on $RUN_LOCK)" >&2
+    exit 1
+  }
+else
+  # macOS does not ship flock by default. Fallback: check PID file.
+  # This is weaker but better than the prior touch-then-delete race.
+  if [ -f "$RUN_PIDFILE" ] && kill -0 "$(cat "$RUN_PIDFILE" 2>/dev/null)" 2>/dev/null; then
     echo "autopilot already running (pid $(cat "$RUN_PIDFILE"))" >&2
     exit 1
   fi
-  rm -f "$RUN_LOCK"
 fi
 echo $$ > "$RUN_PIDFILE"
-touch "$RUN_LOCK"
-trap 'rm -f "$RUN_LOCK" "$RUN_PIDFILE"; emit stop "trap"; exit 0' INT TERM EXIT
+trap 'rm -f "$RUN_PIDFILE"; emit stop "trap"; exit 0' INT TERM EXIT
+# Intentionally NOT deleting $RUN_LOCK in the trap — flock owns it.
 
 if [ -z "$LAUNCHER_CMD" ]; then
   emit abort "LAUNCHER_CMD not set in autopilot.conf"
