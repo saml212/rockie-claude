@@ -206,12 +206,20 @@ def render() -> str:
                 out.append(f"- {OK} **{p['id']}** ({p.get('name','')}) RUNNING — `{endpoint}`")
         if stopped:
             for p in stopped:
-                # EXITED usually means spot preemption (machine taken back).
-                # Resume with a higher bid to reclaim.
+                # EXITED = spot preemption. The right response is NOT a
+                # higher bid on the same provider — it's trying a
+                # different provider at THAT provider's minimum, or
+                # simply resuming at the same provider's current min
+                # bid (via `runpod.py resume` with NO --bid, which now
+                # defaults to minimumBidPrice).
                 out.append(
                     f"- {WARN} **{p['id']}** ({p.get('name','')}) {p['desiredStatus']} "
-                    f"— likely spot preemption. Resume: "
-                    f"`python3 .claude/scripts/runpod.py resume {p['id']} --bid <higher> --yes`"
+                    f"— likely spot preemption. Resume at current min bid: "
+                    f"`python3 .claude/scripts/runpod.py resume {p['id']} --yes`"
+                )
+                out.append(
+                    f"  _(If preempted multiple times in a row, hop to a different provider "
+                    f"rather than bumping the bid — see `scripts/gpu.py` when available.)_"
                 )
         if not running and not stopped:
             out.append(f"- {MISS} no pods found")

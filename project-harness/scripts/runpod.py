@@ -220,10 +220,22 @@ def cmd_create(args) -> int:
     on_demand = p.get("uninterruptablePrice")
     stock = p.get("stockStatus")
 
+    # Default bid = current minimumBidPrice. Paying more than the floor
+    # does not meaningfully reduce preemption risk on RunPod — the
+    # scheduler is a blind auction. The right response to preemption is
+    # provider-hopping (see gpu.py, roadmap), not a "safety margin" bid.
     bid = args.bid
     if bid is None:
-        print(f"--bid not set. min bid is ${min_bid}/GPU-hr; on-demand is ${on_demand}/GPU-hr", file=sys.stderr)
-        return 2
+        if min_bid is None:
+            print(
+                f"--bid not set and no minimumBidPrice returned by RunPod "
+                f"(stock: {stock!r}). GPU type may be out of spot inventory. "
+                f"Try a different gpu-type-id or wait.",
+                file=sys.stderr,
+            )
+            return 2
+        bid = float(min_bid)
+        print(f"[bid] no --bid specified; defaulting to current minimum ${bid}/GPU-hr")
     if min_bid is not None and bid < min_bid:
         print(f"bid ${bid} is below minimum ${min_bid} — would be rejected by the scheduler", file=sys.stderr)
         return 2
@@ -398,16 +410,49 @@ def cmd_resume(args) -> int:
     if not args.yes:
         print(f"dry-run: would resume pod {args.pod_id} (pass --yes)")
         return 0
-    if args.bid is not None:
-        mut = (
-            f'mutation {{ podBidResume(input: {{podId: "{args.pod_id}", '
-            f'bidPerGpu: {args.bid}, gpuCount: {args.gpu_count} }}) '
-            '{ id desiredStatus imageName } }'
-        )
-    else:
+
+    # Decide spot vs on-demand + resolve the bid.
+    # - If --on-demand: use podResume (no bid).
+    # - Otherwise: spot resume via podBidResume. If --bid is omitted,
+    #   look up the pod's gpu_type from gpu_pods and default to the
+    #   current minimumBidPrice — NEVER a bumped bid.
+    if args.on_demand:
         mut = (
             f'mutation {{ podResume(input: {{podId: "{args.pod_id}", '
             f'gpuCount: {args.gpu_count} }}) {{ id desiredStatus imageName }} }}'
+        )
+    else:
+        bid = args.bid
+        if bid is None:
+            conn = _db()
+            row = conn.execute(
+                "SELECT gpu_type FROM gpu_pods WHERE id = ?", (args.pod_id,)
+            ).fetchone()
+            if row and row["gpu_type"]:
+                # Query current min for the original GPU type.
+                q = f'''
+                    query {{ gpuTypes(input: {{ id: "{row["gpu_type"]}" }}) {{
+                      lowestPrice(input: {{ gpuCount: {args.gpu_count} }}) {{
+                        minimumBidPrice
+                      }}
+                    }} }}
+                '''
+                price_data = gql(q)
+                types = price_data.get("gpuTypes") or []
+                if types and (types[0].get("lowestPrice") or {}).get("minimumBidPrice") is not None:
+                    bid = float(types[0]["lowestPrice"]["minimumBidPrice"])
+                    print(f"[bid] resuming at current min ${bid}/GPU-hr for {row['gpu_type']}")
+            if bid is None:
+                print(
+                    "--bid not set and couldn't resolve current min bid automatically. "
+                    "Pass --bid <min>/GPU-hr or --on-demand.",
+                    file=sys.stderr,
+                )
+                return 2
+        mut = (
+            f'mutation {{ podBidResume(input: {{podId: "{args.pod_id}", '
+            f'bidPerGpu: {bid}, gpuCount: {args.gpu_count} }}) '
+            '{ id desiredStatus imageName } }'
         )
     data = gql(mut)
     pod = data.get("podResume") or data.get("podBidResume") or {}
@@ -438,7 +483,9 @@ def main() -> int:
 
     cp = sub.add_parser("create", help="Provision a spot Pod (dry-run unless --yes)")
     cp.add_argument("--gpu-type-id", required=True)
-    cp.add_argument("--bid", type=float, help="$/GPU-hr bid")
+    cp.add_argument("--bid", type=float,
+                    help="Spot bid $/GPU-hr. Default: current minimumBidPrice for this gpu type. "
+                         "Do NOT bump above min — provider-hop on preemption instead.")
     cp.add_argument("--gpu-count", type=int, default=1)
     cp.add_argument("--hours", type=float, default=1.0, help="estimated runtime for cost display")
     cp.add_argument("--volume-gb", type=int, default=40)
@@ -465,10 +512,14 @@ def main() -> int:
     sp.add_argument("--yes", action="store_true")
     sp.set_defaults(func=cmd_stop)
 
-    rp = sub.add_parser("resume", help="Resume a stopped pod")
+    rp = sub.add_parser("resume", help="Resume a stopped pod (spot, minimum bid by default)")
     rp.add_argument("pod_id")
     rp.add_argument("--gpu-count", type=int, default=1)
-    rp.add_argument("--bid", type=float, help="Required for spot pods")
+    rp.add_argument("--bid", type=float,
+                    help="Spot bid $/GPU-hr. Default: current minimumBidPrice from RunPod. "
+                         "Bumping above min does NOT reduce preemption risk — hop providers instead.")
+    rp.add_argument("--on-demand", action="store_true",
+                    help="Resume at on-demand pricing. Last-resort only (2× spot cost).")
     rp.add_argument("--yes", action="store_true")
     rp.set_defaults(func=cmd_resume)
 
