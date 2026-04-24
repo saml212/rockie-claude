@@ -126,12 +126,28 @@ PYEOF
 }
 
 # ── Install project-harness ──────────────────────────────────────────────
-mkdir -p "$TARGET_PROJECT/.claude"/{hooks,scripts,skills,memory,.state}
+mkdir -p "$TARGET_PROJECT/.claude"/{hooks,scripts,skills,memory,memory/migrations,.state}
 
 rsync -a --exclude='__pycache__' "$IDASTONE/project-harness/hooks/"   "$TARGET_PROJECT/.claude/hooks/"
 rsync -a --exclude='__pycache__' "$IDASTONE/project-harness/scripts/" "$TARGET_PROJECT/.claude/scripts/"
 rsync -a "$IDASTONE/project-harness/memory/schema.sql" "$TARGET_PROJECT/.claude/memory/schema.sql"
+rsync -a --exclude='__pycache__' "$IDASTONE/project-harness/memory/migrations/" "$TARGET_PROJECT/.claude/memory/migrations/" 2>/dev/null || true
 rsync -a --exclude='__pycache__' "$IDASTONE/project-harness/skills/"  "$TARGET_PROJECT/.claude/skills/"
+
+# Stamp a stable project_id so two checkouts of the same repo (e.g.
+# ~/proj and ~/backup/proj) don't collide on directory-basename as their
+# project identity. Architecture audit F12.
+PROJECT_ID_FILE="$TARGET_PROJECT/.claude/project_id"
+if [ ! -f "$PROJECT_ID_FILE" ]; then
+  if command -v uuidgen >/dev/null 2>&1; then
+    PROJECT_ID=$(uuidgen | tr 'A-Z' 'a-z')
+  else
+    PROJECT_ID=$(python3 -c 'import uuid;print(uuid.uuid4())')
+  fi
+  # Also record the basename so it's human-readable in logs.
+  printf 'id=%s\nname=%s\n' "$PROJECT_ID" "$(basename "$TARGET_PROJECT")" > "$PROJECT_ID_FILE"
+  echo "[+] stamped project_id=$PROJECT_ID at $PROJECT_ID_FILE"
+fi
 
 # Merge project-harness settings (hook registrations)
 merge_settings "$IDASTONE/project-harness/settings.json" "$TARGET_PROJECT/.claude/settings.json"
