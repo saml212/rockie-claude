@@ -17,14 +17,15 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install shellcheck (for /clean audit shell pass)
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
       - name: Check sqlite3 FTS5
         run: |
           set -e
           SQLITE3_BIN=$(command -v sqlite3)
           echo "sqlite3: $SQLITE3_BIN"
           "$SQLITE3_BIN" ":memory:" "CREATE VIRTUAL TABLE t USING fts5(x)" && echo "FTS5 ok"
-          # idastone pins to /usr/bin/sqlite3 — on Ubuntu this is the system sqlite3;
-          # alias if runner gives us /usr/bin/sqlite3 with FTS5, else symlink
           if [ ! -x /usr/bin/sqlite3 ]; then
             sudo ln -sf "$SQLITE3_BIN" /usr/bin/sqlite3
           fi
@@ -33,19 +34,56 @@ jobs:
       - name: Run smoke test
         run: bash tests/smoke-test.sh
 
-      - name: Run installer against a scratch project
+      - name: Installer dry-run against a scratch project
         run: |
+          set -e
           SCRATCH=$(mktemp -d)
           (cd "$SCRATCH" && git init -q)
-          # Non-interactive: pre-accept
-          echo Y | bash install.sh "$SCRATCH"
-          # Verify key files landed
-          test -f "$SCRATCH/.claude/settings.json"
-          test -f "$SCRATCH/.claude/memory/workflow.db"
-          test -x "$SCRATCH/.claude/hooks/learn-capture.sh"
-          test -x "$SCRATCH/.claude/scripts/journal.py"
-          test -x "$SCRATCH/.claude/scripts/queue.py"
-          test -x "$SCRATCH/.claude/scripts/calibration.py"
-          test -x "$SCRATCH/.claude/scripts/budget.py"
-          test -x "$SCRATCH/.claude/scripts/zcm.sh"
-          echo "installer artifacts verified"
+          # --project-only so we don't pollute the CI runner's ~/.claude
+          # --yes so the installer doesn't prompt
+          bash install.sh --project-only --yes "$SCRATCH"
+
+          echo "── installed artifacts ──"
+          for f in \
+              .claude/settings.json \
+              .claude/memory/workflow.db \
+              .claude/hooks/learn-capture.sh \
+              .claude/hooks/pre-commit-gate.sh \
+              .claude/hooks/pre-train-gate.sh \
+              .claude/hooks/budget-gate.sh \
+              .claude/scripts/journal.py \
+              .claude/scripts/queue.py \
+              .claude/scripts/calibration.py \
+              .claude/scripts/budget.py \
+              .claude/scripts/zcm.sh \
+              .claude/scripts/autopilot_loop.sh \
+              .claude/scripts/dry_run_gate.sh \
+              .claude/scripts/repair_fts.sh \
+              .claude/skills/clean/SKILL.md \
+              .claude/skills/propose-harness-change/SKILL.md \
+              .claude/memory/migrations \
+              .gitignore \
+              .claude/project_id; do
+            if [ -e "$SCRATCH/$f" ]; then
+              echo "  ✓ $f"
+            else
+              echo "  ✗ MISSING: $f"
+              exit 1
+            fi
+          done
+
+          echo ""
+          echo "── installer idempotency re-run ──"
+          bash install.sh --project-only --yes "$SCRATCH" >/dev/null
+          STOP_CMDS=$(python3 -c '
+import json, pathlib, sys
+d = json.load(open("'"$SCRATCH"'/.claude/settings.json"))
+stop = [h["command"] for blk in d["hooks"].get("Stop", []) for h in blk.get("hooks", [])]
+# Every idastone hook should appear exactly once, even after two installs.
+from collections import Counter
+c = Counter(stop)
+dupes = {cmd: n for cmd, n in c.items() if n > 1}
+if dupes:
+  print("DUPES:", dupes); sys.exit(1)
+print("no duplicates")')
+          echo "$STOP_CMDS"
