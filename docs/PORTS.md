@@ -1,8 +1,14 @@
 # Ports — features from SOTA autonomous-research harnesses
 
-Synthesis of a three-agent source-level review of 11 repos. Ranked by
+Synthesis of a three-agent source-level review of 11 repos, re-checked
+against a 60-day arXiv / blog scan on 2026-04-23. Ranked by
 **leverage ÷ effort**. Every entry cites a specific file + line range so
 a future contributor can verify independently.
+
+> **Ecosystem-gap claims are time-stamped.** If a claim says "nobody else
+> ships this", treat that as true only up to the `verified_on:` date on
+> the claim. Three papers filled our "failure taxonomy" gap between Feb
+> and April 2026 (see C4 note below). Re-check quarterly.
 
 Our differentiators that stay untouched — every new port composes *with*
 these, never *replaces* them:
@@ -62,6 +68,54 @@ run `gh repo view <owner>/<repo> --json licenseInfo` and check.
 | Scheduled notes | Persistent cross-wakeup notes skill | Cognition blog | — |
 
 Plus the pre-existing differentiators: pre-run audit, FTS5 `[LEARN]` DB, waterfall, pre-experiment checklist, ntfy preemption, living-doc pattern, `/deploy-team`, pre-commit gate, doc-guard.
+
+### ⚠️ Stale ecosystem-gap claim (updated 2026-04-23)
+
+**C4 failure-taxonomy gap is no longer an open ecosystem gap.** Three
+2026 papers shipped taxonomies between February and April:
+
+- arXiv **2603.06847** "Characterizing Faults in Agentic AI" — 37 types
+  / 13 categories / 12 root-cause classes / 13 symptom classes, validated
+  with 145 practitioners at 83.8% agreement.
+- arXiv **2602.21806** "Bugs in Modern LLM Agent Frameworks" — 15 root
+  causes × 7 symptoms × 5 lifecycle stages, 998 bugs mined from CrewAI
+  + LangChain.
+- arXiv **2604.17658** ErrorProbe — three-stage Strategist/Investigator/
+  Arbiter diagnosis pipeline.
+
+Our `bug | bad-hyperparam | bad-hypothesis` enum is still useful as a
+*coarse* pre-classification that routes `[LEARN]` and `[DEAD-END]`, but
+the "nobody owns this" framing in our README is wrong as of 2026-04-23.
+The correct roadmap move is to **adopt 2603.06847's 13 categories as a
+second enum field**, keeping our 3-value column as the pre-classifier.
+
+### 🆕 New from the 60-day arXiv scan (2026-02-23 → 2026-04-23)
+
+These jumped from "future" to "port this sprint" based on freshly-
+published ablations or licenses:
+
+- **Anthropic three-agent harness** (planner / generator / evaluator
+  with context-reset, not compaction) — anthropic.com/engineering/
+  harness-design-long-running-apps, 2026-03-24. Sustained a 6-hour,
+  $200 autonomous run a solo agent couldn't match at $9. Composes
+  directly with `/deploy-team`. Effort: M.
+- **AiScientist File-as-Bus reference impl** — github.com/AweAI-Team/
+  AiScientist. Ablation removing File-as-Bus drops MLE-Bench Lite by
+  31.82 points (largest delta in any 2026 agentic-research paper we
+  saw). We already cite 2604.13018 as inspiration for Queue; the code
+  is now public. Upgrade `STATE.md`-as-string-file → structured
+  workspace map.
+- **HCC three-tier memory** (arXiv 2601.10402) + **Hindsight 20/20
+  four-network memory** (arXiv 2512.12818, CC-BY 4.0) promote our
+  "two-tier memory" roadmap item from design-stage to port-stage.
+  Hindsight hits 83.6% vs 39% baseline on LongMemEval with a 20B.
+- **Beyond pass@1 reliability metrics** (arXiv 2603.29231) — RDC / VAF
+  / GDS / MOP. Meltdown rates hit 19% on frontier models, and
+  **memory scaffolds universally DECREASED long-horizon performance**.
+  Mandatory pre-port gate for the memory ports above.
+- **MINJA + eTAMP memory-poisoning** (arXiv 2601.05504, 2604.02623).
+  Our `[LEARN]` FTS5 is an attack surface now. Ship the GVU Verifier
+  from the roadmap before autopilot phase 3.
 
 ### 🚧 Still in the roadmap
 

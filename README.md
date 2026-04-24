@@ -29,8 +29,7 @@ Four gaps nobody else in this space has closed. We close all four:
 | **Failure taxonomy** — harnesses lump bugs, bad hyperparams, and bad hypotheses | Post-run review emits a 3-value classification; future `[LEARN]` recall filters on it |
 
 See [docs/PORTS.md](docs/PORTS.md) for source-level citations to every
-competing harness we read, and [docs/STARS.md](docs/STARS.md) for the
-full positioning story.
+competing harness we read.
 
 ## The loop
 
@@ -75,6 +74,11 @@ The installer:
 5. Prints a CLAUDE.md template path — you drop it into your project root and edit the `Project` section.
 
 See [docs/install.md](docs/install.md) for manual install and [docs/ntfy-setup.md](docs/ntfy-setup.md) for the push-notification setup (optional).
+
+**Verify the install works on your box** — `bash tests/smoke-test.sh` runs
+47 assertions (hook fires, FTS5 searches, atomic queue claim, installer
+idempotency, path-traversal refusal, budget-ceiling enforcement). CI runs
+the same suite on every push. ~10 seconds, no API key.
 
 ## What gets installed
 
@@ -140,7 +144,9 @@ clean-room reimplemented.
 
 ## Further reading
 
-- [docs/PORTS.md](docs/PORTS.md) — competing harnesses read at source level + ranked port list
-- [docs/STARS.md](docs/STARS.md) — positioning + roadmap to "most-starred"
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the components fit
+- [docs/quickstart.md](docs/quickstart.md) — 5-minute install + first commands
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — event flow + storage model
+- [docs/PORTS.md](docs/PORTS.md) — every competitor we read, source-cited
 - [docs/ntfy-setup.md](docs/ntfy-setup.md) — push notifications setup
+- [SECURITY.md](SECURITY.md) — threat model + risk surfaces
+- [CHANGELOG.md](CHANGELOG.md) — what changed, by release
