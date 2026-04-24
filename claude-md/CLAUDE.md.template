@@ -27,6 +27,28 @@
 **If you're unsure where to put something, put it in `.claude/_local/`.**
 Nothing under that dir ever touches git.
 
+## Session onboarding (first prompt)
+
+On every new session, a `SessionStart` hook emits a status report via
+stderr BEFORE your first user prompt lands. It covers:
+
+- Environment: `.env` presence, which keys are set
+- RunPod: authed user + running pods (with SSH endpoint) + EXITED pods (resumable)
+- Experiment queue: counts + top-priority pending item
+- Best-so-far results + last 3 experiments
+- Current stage
+- Tail of `SCHEDULED_NOTES.md` (where the previous scheduled run left off)
+
+**Whatever the user's opening prompt — even "hi" or blank — you must:**
+
+1. Read the session report that's already in context.
+2. Propose a single first action in ONE sentence.
+3. Wait for "go" / redirect before doing anything with side effects.
+
+If the user hasn't set `RUNPOD_API_KEY`, your first sentence asks them
+to. If there's an EXITED pod, offer to resume. If the queue has a top
+item and a running pod, propose running it. Be short.
+
 ## Upstream-back — share the wealth
 
 If you discover a harness-level improvement that generalizes beyond this
