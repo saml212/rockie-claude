@@ -5,6 +5,47 @@
 > specifics. The sections above the divider are the idastone harness
 > contract — don't rip them out unless you know what you're disabling.
 
+## Where things go (plug-and-play map)
+
+| Location | Status | What lives here |
+|---|---|---|
+| `CLAUDE.md`, `README.md`, `STATE.md`, `ARCHITECTURE.md`, `EXPERIMENT_LOG.md` | **TRACKED** | Public project docs, agent-readable. |
+| `.claude/hooks/`, `.claude/scripts/`, `.claude/skills/` | **TRACKED** | Harness logic — edits are shared with collaborators. |
+| `.claude/settings.json` | **TRACKED** | Hook registrations. |
+| `.claude/settings.local.json` | gitignored | Your personal permission allowlist. |
+| `.claude/memory/workflow.db` | gitignored | Per-project learnings/queue/journal state. |
+| `.claude/.state/` | gitignored | Sentinels, pids, locks. |
+| `.claude/autopilot.conf`, `.claude/budget.toml` | gitignored | Shell-sourced configs — security-critical, never commit. |
+| `.claude/_local/` | gitignored | **Agent scratch.** Draft plots, temp notes, in-progress findings. Use freely. |
+| `_private/` at any depth | gitignored | **User-confidential** — NDA material, unreleased results, lab internals. |
+| `docs/_internal/` | gitignored | Your roadmap / competitive positioning / anything not for outside eyes. |
+| `*.private.md` | gitignored | One-off confidential docs alongside regular ones. |
+| `experiment-runs/` | user choice | Typically tracked (reproducibility), but gitignore it if runs contain sensitive data. |
+| `checkpoints/`, `wandb/`, `mlruns/`, `*.pt`, `*.ckpt` | gitignored | ML artifacts — never in the repo. |
+| `.env`, SSH keys, credentials | gitignored | Secrets — never in the repo, even if encrypted. |
+
+**If you're unsure where to put something, put it in `.claude/_local/`.**
+Nothing under that dir ever touches git.
+
+## Upstream-back — share the wealth
+
+If you discover a harness-level improvement that generalizes beyond this
+project (a new hook, a fix to an existing script, a useful skill), emit:
+
+```
+[LEARN harness-upstream] <one-line description of the improvement>
+```
+
+The `learn-capture.sh` Stop hook files this in the same DB as ordinary
+`[LEARN]` blocks, but tagged so `/propose-harness-change` can surface it
+later. When the user reviews, you can run `/propose-harness-change` to
+package the diff as a PR against the idastone source repo. Other users
+of idastone get the benefit; you get credit; the ecosystem grows. See
+`CONTRIBUTING.md` for the PR flow.
+
+Guardrail: the agent does NOT auto-push. The Generator/Verifier/Updater
+split lives in `.claude/skills/propose-harness-change/SKILL.md`.
+
 ## Workflow: Plan → Research → Build → Audit → Run → Assess → Codify
 
 Every cycle should make the next cycle better.
