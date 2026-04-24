@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash $HOME/.claude/hooks/memory-session-start.sh" }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash $HOME/.claude/hooks/memory-pre-compact.sh" }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash $HOME/.claude/hooks/check-orphan-dashboards.sh" }
+        ]
+      }
+    ]
+  }
+}
