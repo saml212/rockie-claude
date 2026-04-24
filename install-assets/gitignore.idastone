@@ -1,0 +1,61 @@
+# ─── idastone harness block — managed by install.sh ────────────────────
+# Do not edit between the BEGIN and END markers. install.sh will re-merge
+# this block on upgrades. Rules outside the markers are yours and are
+# preserved.
+
+# BEGIN idastone
+# Harness runtime — per-project state, never commit
+.claude/memory/workflow.db
+.claude/memory/workflow.db-*
+.claude/memory/hook.log*
+.claude/memory/ntfy_last_seen
+.claude/memory/zcm_events.jsonl
+.claude/memory/autopilot_events.jsonl
+.claude/memory/autopilot.log
+.claude/.state/
+.team-runs/
+
+# Shell-sourced / secret per-project configs — never commit
+.claude/autopilot.conf
+.claude/budget.toml
+.claude/project_id
+.claude/settings.local.json
+
+# Agent scratch — drafts, temp plots, in-progress notes
+.claude/_local/
+
+# Secrets — defense-in-depth even if you have them elsewhere
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+id_ecdsa*
+.netrc
+credentials.json
+credentials.yaml
+secrets/
+*.secret
+service-account*.json
+
+# ML artifacts — training outputs don't belong in the repo
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.bin
+*.npz
+checkpoints/
+wandb/
+mlruns/
+
+# User-confidential — see docs/install.md "where things go"
+_private/
+**/_private/
+docs/_internal/
+**/*.private.md
+NOTES_PRIVATE*
+# END idastone

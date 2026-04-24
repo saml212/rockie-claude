@@ -167,6 +167,38 @@ fi
 
 chmod +x "$TARGET_PROJECT/.claude/hooks/"*.sh "$TARGET_PROJECT/.claude/scripts/"*.sh 2>/dev/null || true
 
+# ── Merge idastone .gitignore block into target project's .gitignore ────
+# Idempotent: rewrites only the block between BEGIN/END idastone markers,
+# leaving the user's own rules alone. Users can keep their own rules
+# OUTSIDE the markers; the installer never touches those lines.
+GITIGNORE_TPL="$IDASTONE/install-assets/gitignore.idastone"
+GITIGNORE_DST="$TARGET_PROJECT/.gitignore"
+if [ -f "$GITIGNORE_TPL" ]; then
+  if [ ! -f "$GITIGNORE_DST" ]; then
+    cat "$GITIGNORE_TPL" > "$GITIGNORE_DST"
+    echo "[+] wrote $GITIGNORE_DST"
+  elif ! grep -q '^# BEGIN idastone' "$GITIGNORE_DST"; then
+    # No existing block — append.
+    printf '\n' >> "$GITIGNORE_DST"
+    cat "$GITIGNORE_TPL" >> "$GITIGNORE_DST"
+    echo "[+] appended idastone block to $GITIGNORE_DST"
+  else
+    # Replace just the existing block (between markers).
+    python3 - "$GITIGNORE_DST" "$GITIGNORE_TPL" <<'PY'
+import pathlib, re, sys
+dst = pathlib.Path(sys.argv[1]); tpl = pathlib.Path(sys.argv[2]).read_text()
+text = dst.read_text()
+new = re.sub(
+    r'(?ms)^# BEGIN idastone\n.*?^# END idastone\n',
+    tpl[tpl.index('# BEGIN idastone'):tpl.index('# END idastone')+len('# END idastone\n')],
+    text, count=1,
+)
+dst.write_text(new)
+print(f"[+] refreshed idastone block in {sys.argv[1]}")
+PY
+  fi
+fi
+
 # ── Install user-harness ─────────────────────────────────────────────────
 if [ "$PROJECT_ONLY" = "0" ]; then
   mkdir -p "$HOME/.claude"/{hooks,skills,scripts,teams}
