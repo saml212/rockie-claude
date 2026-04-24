@@ -14,18 +14,21 @@ REPO="$(cd "$ROOT/.." && pwd)"
 bash "$ROOT/scripts/rotate_hook_log.sh" 2>/dev/null
 RECONCILE_TTL_SECS=${RECONCILE_TTL_SECS:-120}
 
-# Skip if no API key — no point querying.
 STATE_DIR="$ROOT/.state"
 mkdir -p "$STATE_DIR"
 LAST_FILE="$STATE_DIR/last_reconcile_ts"
 
-# Source .env so RUNPOD_API_KEY is visible to the Python script.
+# Source .env so provider keys are visible to the Python script.
 if [ -f "$REPO/.env" ]; then
   set -a
   . "$REPO/.env" 2>/dev/null
   set +a
 fi
-[ -z "$RUNPOD_API_KEY" ] && exit 0
+# Skip if no provider configured — no point querying.
+if [ -z "${RUNPOD_API_KEY:-}" ] && [ -z "${VAST_API_KEY:-}" ] && \
+   [ -z "${PRIME_API_KEY:-}" ] && [ -z "${SHADEFORM_API_KEY:-}" ]; then
+  exit 0
+fi
 
 # TTL check
 NOW=$(date +%s)
@@ -39,8 +42,9 @@ fi
 
 echo "[$(date -Iseconds)] budget-reconcile: fired" >> "$ROOT/memory/hook.log"
 
-# Run reconcile. --quiet suppresses stdout; stderr still surfaces
-# errors. Fail-open: reconcile errors don't block the session.
-python3 "$ROOT/scripts/runpod.py" reconcile --quiet >/dev/null 2>&1 || true
+# Cross-provider reconcile: pulls live state from every configured
+# provider, sums into budget_usage.dollars. Fail-open — reconcile
+# errors must never block a session.
+python3 "$ROOT/scripts/gpu.py" reconcile --quiet >/dev/null 2>&1 || true
 
 exit 0
