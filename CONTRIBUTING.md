@@ -84,6 +84,25 @@ We don't require a specific conventional-commits style, but:
 - Don't add Co-Authored-By Claude trailers unless you're actively
   pairing on it — most contributors won't be.
 
+## Upstream-back from agents using idastone
+
+If an agent discovers a harness-level improvement while working in a
+downstream repo, the recommended flow is:
+
+1. Agent emits `[LEARN harness-upstream] <description>` during the
+   session. The Stop hook captures it.
+2. Later, user invokes `/propose-harness-change` (see
+   `project-harness/skills/propose-harness-change/SKILL.md`).
+3. The Generator role writes the patch against a local idastone clone.
+4. A fresh-context Verifier (dispatched via the Agent tool) audits
+   composition + smoke-test coverage + injection regressions.
+5. Human reviews the verdict, runs the smoke test, and — if all good —
+   opens a PR using `gh pr create`.
+
+The agent NEVER auto-pushes. The separation of Generator / Verifier /
+Updater keeps the self-improvement loop from drifting. Even with a
+passing Verifier, the human decides when a PR opens.
+
 ## When you'd be better off opening an issue first
 
 - Renaming a hook, table, or CLI (breaks existing installs).

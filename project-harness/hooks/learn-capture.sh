@@ -77,8 +77,13 @@ try:
     if not text:
         sys.exit(0)
 
-    # Match [LEARN] <category>: <rule>, optional \nMistake: ..., optional \nCorrection: ...
+    # Match [LEARN] <category>: <rule>, optional \nMistake: …, optional \nCorrection: …
     # Anchor at end of body: next [LEARN] block, blank line, or end of input.
+    #
+    # Special category 'harness-upstream' is recognized: the agent uses
+    # [LEARN harness-upstream] to flag improvements that should flow back
+    # to the idastone repo via /propose-harness-change. It's stored like
+    # any other learning but can be filtered with category='harness-upstream'.
     pattern = re.compile(
         r'\[LEARN\]\s*([\w][\w\s\-/]*?)\s*:\s*(.+?)'
         r'(?:\n\s*Mistake:\s*(.+?))?'
