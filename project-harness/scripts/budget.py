@@ -178,6 +178,73 @@ def cmd_check(_args) -> int:
     return 0
 
 
+def _state_dir() -> pathlib.Path:
+    d = HARNESS_ROOT / ".state"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def cmd_tick_wallclock(_args) -> int:
+    """Refresh session wallclock_s counter to 'now - session_start_ts'.
+
+    SessionStart hook stamps .state/session_start_<sid>. This command,
+    called by the Stop hook, reads that timestamp and SETS the
+    wallclock_s counter (monotonic, per-session) to the elapsed seconds.
+    """
+    import time
+    sid = session_id()
+    stamp = _state_dir() / f"session_start_{sid}"
+    if not stamp.exists():
+        return 0  # nothing to tick
+    try:
+        start = int(stamp.read_text().strip())
+    except Exception:
+        return 0
+    now = int(time.time())
+    elapsed = max(0, now - start)
+    conn = connect()
+    key = _key("session", "wallclock_s")
+    conn.execute(
+        """
+        INSERT INTO budget_usage (key, project, session_id, metric, value)
+        VALUES (?, ?, ?, 'wallclock_s', ?)
+        ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')
+        """,
+        (key, project_name(), sid, float(elapsed), float(elapsed)),
+    )
+    conn.commit()
+    return 0
+
+
+def cmd_tick_tokens(args) -> int:
+    """Estimate session tokens from the transcript file size and update counter.
+
+    Rough proxy: 1 token ≈ 4 bytes of utf-8 assistant/user text. Called
+    by the Stop hook with --transcript <path>. SETS (not ADDS) the
+    session counter so it always reflects the current transcript size.
+    """
+    p = pathlib.Path(args.transcript)
+    if not p.exists():
+        return 0
+    try:
+        nbytes = p.stat().st_size
+    except OSError:
+        return 0
+    est_tokens = int(nbytes / 4)
+    conn = connect()
+    key = _key("session", "tokens")
+    conn.execute(
+        """
+        INSERT INTO budget_usage (key, project, session_id, metric, value)
+        VALUES (?, ?, ?, 'tokens', ?)
+        ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')
+        """,
+        (key, project_name(), session_id(), float(est_tokens), float(est_tokens)),
+    )
+    conn.commit()
+    return 0
+
+
 def cmd_reset(args) -> int:
     if args.scope not in ("session", "project"):
         print("scope must be 'session' or 'project'", file=sys.stderr)
@@ -204,6 +271,8 @@ def main() -> int:
     sub.add_parser("check").set_defaults(func=cmd_check)
     ap = sub.add_parser("add"); ap.add_argument("metric"); ap.add_argument("amount"); ap.set_defaults(func=cmd_add)
     rp = sub.add_parser("reset"); rp.add_argument("scope"); rp.set_defaults(func=cmd_reset)
+    sub.add_parser("tick-wallclock").set_defaults(func=cmd_tick_wallclock)
+    tt = sub.add_parser("tick-tokens"); tt.add_argument("--transcript", required=True); tt.set_defaults(func=cmd_tick_tokens)
     args = p.parse_args()
     if not args.cmd:
         return cmd_status(args)

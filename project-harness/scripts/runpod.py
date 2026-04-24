@@ -289,6 +289,22 @@ def cmd_create(args) -> int:
     )
     conn.commit()
 
+    # Charge the dollars budget — upper-bound estimate at bid × count ×
+    # estimated hours. This is the ONLY dimension that maps to real
+    # external spend, so it's the ceiling that most matters. If the pod
+    # stops early (e.g. spot preemption), the counter over-counts; that
+    # is intentional — safer to over-reserve than under-reserve.
+    import subprocess as _sp
+    estimated_cost = bid * args.gpu_count * args.hours
+    try:
+        _sp.run(
+            [sys.executable, str(pathlib.Path(__file__).parent / "budget.py"),
+             "add", "dollars", str(estimated_cost)],
+            check=False, capture_output=True, text=True,
+        )
+    except Exception:
+        pass
+
     if args.no_wait:
         return 0
 

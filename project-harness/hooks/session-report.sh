@@ -11,6 +11,18 @@ set +e
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
+
+# Stamp session start time for the wallclock budget counter. Stop hook
+# calls `budget.py tick-wallclock` which reads this file to compute the
+# elapsed seconds.
+INPUT=$(cat)
+SESSION_ID=$(echo "$INPUT" | python3 -c 'import sys,json
+try: print(json.load(sys.stdin).get("session_id",""))
+except: print("")' 2>/dev/null)
+if [ -n "$SESSION_ID" ]; then
+  mkdir -p "$ROOT/.state"
+  date +%s > "$ROOT/.state/session_start_$SESSION_ID"
+fi
 bash "$ROOT/scripts/rotate_hook_log.sh" 2>/dev/null
 echo "[$(date -Iseconds)] session-report: fired" >> "$ROOT/memory/hook.log"
 

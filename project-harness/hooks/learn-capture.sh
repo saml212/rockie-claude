@@ -21,6 +21,19 @@ echo "[$(date -Iseconds)] learn-capture: fired" >> "$LOG"
 
 INPUT=$(cat)
 TRANSCRIPT=$(echo "$INPUT" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("transcript_path",""))' 2>/dev/null)
+SESSION_ID=$(echo "$INPUT" | python3 -c 'import sys,json
+try: print(json.load(sys.stdin).get("session_id",""))
+except: print("")' 2>/dev/null)
+
+# Tick wallclock + token budget counters (harmless no-ops if ceilings
+# aren't configured in budget.toml — keeps mechanisms wired regardless).
+if [ -n "$SESSION_ID" ]; then
+  CLAUDE_SESSION_ID="$SESSION_ID" python3 "$ROOT/scripts/budget.py" tick-wallclock >/dev/null 2>&1
+  if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+    CLAUDE_SESSION_ID="$SESSION_ID" python3 "$ROOT/scripts/budget.py" tick-tokens --transcript "$TRANSCRIPT" >/dev/null 2>&1
+  fi
+fi
+
 [ -z "$TRANSCRIPT" ] && exit 0
 [ ! -f "$TRANSCRIPT" ] && exit 0
 

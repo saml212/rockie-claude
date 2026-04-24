@@ -1,0 +1,22 @@
+# .claude/budget.toml — copy to .claude/budget.toml and uncomment the
+# dimensions you want enforced. Anything absent is unlimited.
+#
+# Mechanisms are documented in docs/budgets.md. All dimensions are
+# auto-tracked — you don't need to call anything to update counters.
+
+# ─── When to uncomment ──────────────────────────────────────────────
+#  tokens         Cloud API users (pay-per-token)
+#  tool_calls     Debug: cap a runaway-loop bug before it hits your wallet
+#  wallclock_s    Cloud API users; autonomous runs on untrusted inputs
+#  dollars        ALWAYS — external compute (RunPod spot-GPU) spend
+
+# [session]
+# tokens      = 5000000       # ~8h of heavy Sonnet-4.6 on pay-per-token
+# tool_calls  = 4000          # runaway-loop ceiling (set generous)
+# wallclock_s = 28800         # 8h wall-clock per session
+
+[project]
+# Hard cap on RunPod spot-GPU spend across all sessions. Overnight H100
+# at typical spot ($1.50-2.50/GPU-hr × 8-10 hrs) ≈ $12-25; $50 is a
+# generous overnight headroom.
+dollars = 50.00
