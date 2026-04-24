@@ -90,12 +90,34 @@ def next_backup_path(target: pathlib.Path) -> pathlib.Path:
 
 
 def apply_blocks(blocks: Iterable[Block], *, dry_run: bool, restrict: pathlib.Path | None) -> int:
+    # CONTAINMENT: reject absolute paths and any path that resolves outside
+    # the current working directory. An LLM-produced patch can otherwise
+    # coerce this script into writing ~/.ssh/authorized_keys, /etc/hosts,
+    # etc. (security audit finding C-1, 2026-04-23).
+    cwd = pathlib.Path.cwd().resolve()
+
+    def contained(p: pathlib.Path) -> bool:
+        if p.is_absolute():
+            return False
+        resolved = (cwd / p).resolve()
+        try:
+            resolved.relative_to(cwd)
+            return True
+        except ValueError:
+            return False
+
     # First pass: validate all blocks before writing anything.
     validated: list[tuple[Block, str, str]] = []  # (block, current_contents, new_contents)
     seen: dict[pathlib.Path, str] = {}
     errors: list[str] = []
     for b in blocks:
         if restrict and b.path.resolve() != restrict.resolve():
+            continue
+        if not contained(b.path):
+            errors.append(
+                f"{b.path}: rejected — path escapes the current working directory "
+                f"(absolute paths and '..' segments are never accepted)"
+            )
             continue
         if not b.path.exists():
             errors.append(f"{b.path}: file not found")

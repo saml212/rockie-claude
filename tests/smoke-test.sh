@@ -302,20 +302,21 @@ echo "we're not done yet" | python3 "$PROJ/.claude/scripts/convergence.py" - >/d
 
 # ── 12. apply_patch SEARCH/REPLACE ───────────────────────────────────────
 section "apply_patch"
+mkdir -p "$WORK/patch-cwd"
 echo "hello
 line two
-line three" > "$WORK/target.txt"
-cat > "$WORK/patch.ok" <<PATCH
-$WORK/target.txt
+line three" > "$WORK/patch-cwd/target.txt"
+cat > "$WORK/patch.ok" <<'PATCH'
+target.txt
 <<<<<<< SEARCH
 line two
 =======
 line two (edited)
 >>>>>>> REPLACE
 PATCH
-python3 "$PROJ/.claude/scripts/apply_patch.py" < "$WORK/patch.ok" > /dev/null
-grep -q "line two (edited)" "$WORK/target.txt" && ok "apply_patch: round-trip" || fail "apply_patch: round-trip"
-ls "$WORK/target.txt".*.bak >/dev/null 2>&1 && ok "apply_patch: wrote backup" || fail "apply_patch: backup missing"
+(cd "$WORK/patch-cwd" && python3 "$PROJ/.claude/scripts/apply_patch.py" < "$WORK/patch.ok" > /dev/null)
+grep -q "line two (edited)" "$WORK/patch-cwd/target.txt" && ok "apply_patch: round-trip (relative path)" || fail "apply_patch: round-trip"
+ls "$WORK/patch-cwd/target.txt".*.bak >/dev/null 2>&1 && ok "apply_patch: wrote backup" || fail "apply_patch: backup missing"
 
 cat > "$WORK/patch.bad" <<PATCH
 $WORK/target.txt
@@ -327,6 +328,31 @@ replacement
 PATCH
 python3 "$PROJ/.claude/scripts/apply_patch.py" < "$WORK/patch.bad" >/dev/null 2>&1
 [ "$?" -ne 0 ] && ok "apply_patch: rejects when SEARCH not found" || fail "apply_patch: should reject missing SEARCH"
+
+# Path traversal — apply_patch must refuse absolute paths and '..' escapes.
+mkdir -p "$WORK/proj-dir" && echo "victim" > "$WORK/victim.txt"
+cat > "$WORK/patch.escape" <<PATCH
+../victim.txt
+<<<<<<< SEARCH
+victim
+=======
+PWNED
+>>>>>>> REPLACE
+PATCH
+(cd "$WORK/proj-dir" && python3 "$PROJ/.claude/scripts/apply_patch.py" < "$WORK/patch.escape" >/dev/null 2>&1)
+VICTIM_CONTENT=$(cat "$WORK/victim.txt")
+[ "$VICTIM_CONTENT" = "victim" ] && ok "apply_patch: refuses ../ escape" || fail "apply_patch: TRAVERSAL — victim overwritten"
+
+cat > "$WORK/patch.abs" <<PATCH
+/tmp/idastone-abs-target.txt
+<<<<<<< SEARCH
+whatever
+=======
+PWNED
+>>>>>>> REPLACE
+PATCH
+python3 "$PROJ/.claude/scripts/apply_patch.py" < "$WORK/patch.abs" >/dev/null 2>&1
+[ ! -f /tmp/idastone-abs-target.txt ] && ok "apply_patch: refuses absolute paths" || { rm -f /tmp/idastone-abs-target.txt; fail "apply_patch: absolute path accepted"; }
 
 # ── 13. Dry-run gate ─────────────────────────────────────────────────────
 section "dry-run gate"
