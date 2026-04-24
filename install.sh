@@ -37,7 +37,16 @@ if [ ! -d "$TARGET_PROJECT" ]; then
   echo "error: target project dir '$TARGET_PROJECT' does not exist" >&2
   exit 2
 fi
-TARGET_PROJECT=$(cd "$TARGET_PROJECT" && pwd)
+TARGET_PROJECT=$(cd "$TARGET_PROJECT" && pwd -P)
+
+# Refuse to install idastone into its own clone.
+IDASTONE_PHYS=$(cd "$IDASTONE" && pwd -P)
+if [ "$TARGET_PROJECT" = "$IDASTONE_PHYS" ]; then
+  echo "error: refusing to install idastone into its own clone ($TARGET_PROJECT)." >&2
+  echo "       pass the path to your research project as the first argument:" >&2
+  echo "         ./install.sh ~/path/to/your/research-project" >&2
+  exit 2
+fi
 
 echo "┌── idastone installer ──────────────────────────────────"
 echo "│  project-harness  →  $TARGET_PROJECT/.claude/"

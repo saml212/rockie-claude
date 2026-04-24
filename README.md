@@ -24,7 +24,7 @@ Four gaps nobody else in this space has closed. We close all four:
 | Gap | How idastone closes it |
 |---|---|
 | **Pre-run code audit** — every other harness reviews *after* a run burns compute | A separate auditor agent reads shapes/gradients/stability *before* launch; `/clean` sentinel + pre-commit-gate hook refuse to commit unexamined diffs |
-| **Semantic-loop detection** — agents spin silently for hours | Port of OpenHands `stuck.py`: 5 loop types (action-repeat, error-repeat, monologue, alternating-cycle, condensation-loop) emit a `[LEARN]` and trigger `/replan` |
+| **Semantic-loop detection** — agents spin silently for hours | Port of OpenHands `stuck.py`: 4 loop types (action-repeat, error-repeat, monologue, alternating-cycle at periods 2/3/4). The 5th OpenHands type, `condensation-loop`, is specific to their context-compressor and does not translate to Claude Code's transcript model — documented in `docs/PORTS.md`. |
 | **Hypothesis calibration** — nobody tracks whether predictions were right | Every experiment logs `predicted_delta` + `actual_delta`; the `[LEARN]` DB surfaces whether your priors are improving |
 | **Failure taxonomy** — harnesses lump bugs, bad hyperparams, and bad hypotheses | Post-run review emits a 3-value classification; future `[LEARN]` recall filters on it |
 
@@ -57,10 +57,14 @@ Every cycle should make the next cycle better.
 ## Install
 
 ```bash
-git clone https://github.com/saml212/idastone.git
-cd idastone
-./install.sh                # interactive; installs into your current project + ~/.claude
+git clone https://github.com/saml212/idastone.git ~/idastone
+cd ~/idastone
+./install.sh ~/path/to/your/research-project
 ```
+
+(The target project argument is required when the clone *is* your working
+directory — without it the installer refuses to install idastone into its
+own clone.)
 
 The installer:
 
