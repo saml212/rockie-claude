@@ -716,6 +716,44 @@ method keeps the preemption-events writer in one place.
 
 ---
 
+## Cost tracking across providers
+
+This is a critical adjacent feature that goes in the same sprint. A
+user who doesn't know what their current RunPod volume is costing
+them is the same user who won't know what their multi-provider spend
+is. Ship it alongside the provider adapters.
+
+The `scripts/runpod.py cost` command is the prototype: it queries the
+provider's live API for running pods + volumes + current rates,
+prints an hourly-spend estimate, and reports cumulative against the
+`budget_usage.dollars` counter.
+
+Extend this into `scripts/gpu.py cost` that:
+
+1. Iterates every provider with a configured API key.
+2. For each, calls `provider.current_spend()` which each adapter
+   implements (compute + storage separately where possible).
+3. Sums + displays a per-provider breakdown + grand total.
+4. Compares against `budget_usage.dollars` ceiling (warn at 80%,
+   block via `budget-gate` at 100%).
+
+The key design point: **each adapter is responsible for translating
+its own billing model into dollars-per-hour**. Some providers bill
+per-second (RunPod), some per-hour (Vast), some bundled (Shadeform).
+The adapter returns a normalized `Spend(compute_per_hr, storage_per_hr,
+cumulative_estimate_usd)` and `gpu.py cost` just sums.
+
+Also wire the `terminate` verb across providers:
+- RunPod: `podTerminate` (already in runpod.py)
+- Vast: `DELETE /api/v0/instances/{id}/`
+- Prime: `DELETE /api/v1/pods/{podId}`
+- Shadeform: `POST /v1/instances/{id}/delete`
+
+`stop` preserves volume (still paying storage); `terminate` is the
+final delete. Every adapter MUST expose both if the provider supports
+both, and document that `terminate` is required to stop paying
+storage on idle pods.
+
 ## Scope for the implementation agent
 
 A reasonable sprint for a future session:

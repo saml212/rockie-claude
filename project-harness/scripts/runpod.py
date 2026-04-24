@@ -406,6 +406,95 @@ def cmd_stop(args) -> int:
     return 0
 
 
+def cmd_terminate(args) -> int:
+    """podTerminate — permanently delete a pod + its volume.
+
+    Different from `stop`: stop pauses compute but keeps the volume
+    (so you keep paying storage). terminate destroys everything. Use
+    when a pod is EXITED and you don't intend to resume, OR when a
+    running pod should be fully torn down.
+    """
+    if not args.yes:
+        print(f"dry-run: would TERMINATE (delete) pod {args.pod_id} — volume data LOST. Pass --yes to confirm.")
+        return 0
+    data = gql(
+        f'mutation {{ podTerminate(input: {{podId: "{args.pod_id}"}}) }}'
+    )
+    # podTerminate returns null on success per RunPod docs; errors bubble via gql()
+    print(f"[terminated] {args.pod_id} — pod + volume deleted")
+    try:
+        conn = _db()
+        conn.execute(
+            "UPDATE gpu_pods SET status='TERMINATED', stopped_at=datetime('now') WHERE id=?",
+            (args.pod_id,),
+        )
+        conn.commit()
+    except sqlite3.Error:
+        pass
+    return 0
+
+
+def cmd_cost(_args) -> int:
+    """Show current spend snapshot across known pods + cumulative budget usage."""
+    # Live RunPod state
+    data = gql('''
+        query { myself {
+          networkVolumes { id name size dataCenterId }
+          pods { id name desiredStatus volumeInGb costPerHr
+                 runtime { uptimeInSeconds } }
+        } }
+    ''')
+    me = data.get("myself") or {}
+    pods = me.get("pods") or []
+    volumes = me.get("networkVolumes") or []
+
+    print("── RunPod pods ──")
+    if not pods:
+        print("  (none)")
+    running_cost_per_hr = 0.0
+    idle_volume_gb = 0
+    for p in pods:
+        status = p.get("desiredStatus", "?")
+        gb = p.get("volumeInGb", 0)
+        rt = p.get("runtime") or {}
+        up = rt.get("uptimeInSeconds")
+        cph = p.get("costPerHr", 0) or 0
+        marker = "▶" if status == "RUNNING" else ("×" if status in ("EXITED","STOPPED") else "?")
+        print(f"  {marker} {p['id']:20} {p.get('name',''):25} {status:8} vol={gb}GB cost={cph}/hr uptime={up}s")
+        if status == "RUNNING":
+            running_cost_per_hr += float(cph)
+        else:
+            idle_volume_gb += int(gb)
+
+    print("\n── RunPod network volumes ──")
+    if not volumes:
+        print("  (none)")
+    vol_bytes = 0
+    for v in volumes:
+        print(f"  {v.get('id'):20} {v.get('name',''):20} {v.get('size')}GB in {v.get('dataCenterId','?')}")
+        vol_bytes += int(v.get("size", 0) or 0)
+
+    # Rough estimate: RunPod charges ~$0.10/GB/month for container/network storage.
+    # Not authoritative — check your billing page for the real number.
+    STORAGE_RATE = 0.10 / 30 / 24  # $/GB/hr
+    idle_hr_cost = (idle_volume_gb + vol_bytes) * STORAGE_RATE
+
+    print("\n── current-hour cost estimate ──")
+    print(f"  running compute:  ${running_cost_per_hr:.3f}/hr")
+    print(f"  idle storage:     ${idle_hr_cost:.4f}/hr  ({idle_volume_gb + vol_bytes} GB idle)")
+    print(f"  TOTAL live rate:  ${running_cost_per_hr + idle_hr_cost:.3f}/hr "
+          f"= ~${(running_cost_per_hr + idle_hr_cost)*24:.2f}/day")
+
+    # Cumulative vs budget
+    print("\n── budget counter (cumulative since install) ──")
+    import subprocess as _sp
+    _sp.run(
+        [sys.executable, str(pathlib.Path(__file__).parent / "budget.py"), "status"],
+        check=False,
+    )
+    return 0
+
+
 def cmd_resume(args) -> int:
     if not args.yes:
         print(f"dry-run: would resume pod {args.pod_id} (pass --yes)")
@@ -507,10 +596,18 @@ def main() -> int:
     gp.add_argument("pod_id")
     gp.set_defaults(func=cmd_get_pod)
 
-    sp = sub.add_parser("stop", help="Stop a pod (dry-run unless --yes)")
+    sp = sub.add_parser("stop", help="Pause a pod (keeps volume; still pay storage). Dry-run unless --yes.")
     sp.add_argument("pod_id")
     sp.add_argument("--yes", action="store_true")
     sp.set_defaults(func=cmd_stop)
+
+    tp = sub.add_parser("terminate", help="DELETE a pod + its volume. Final. Dry-run unless --yes.")
+    tp.add_argument("pod_id")
+    tp.add_argument("--yes", action="store_true")
+    tp.set_defaults(func=cmd_terminate)
+
+    cp_cost = sub.add_parser("cost", help="Current-hour spend snapshot + cumulative budget usage")
+    cp_cost.set_defaults(func=cmd_cost)
 
     rp = sub.add_parser("resume", help="Resume a stopped pod (spot, minimum bid by default)")
     rp.add_argument("pod_id")
