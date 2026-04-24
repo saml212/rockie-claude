@@ -1,0 +1,17 @@
+{
+  "name": "cascade-team-orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Multi-agent team orchestrator for cascade — spawns claude CLI agents in worktrees, coordinates via shared thread, serves live dashboard.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
