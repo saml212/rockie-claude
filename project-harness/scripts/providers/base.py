@@ -107,7 +107,15 @@ class Price:
 
 @dataclass
 class SpotSpec:
-    """Create-pod request passed to Provider.create_spot()."""
+    """Create-pod request passed to Provider.create_spot().
+
+    `extras` carries provider-specific knobs that don't generalize across
+    the fleet — e.g. RunPod's `secure` (SECURE-cloud filter) and
+    `min_vcpu`/`min_ram`, Vast's `reliability_min`, Shadeform's `cloud`
+    backend pin. Each adapter documents the keys it reads from extras.
+    Keeps the shared shape clean while letting power users hit
+    provider-specific levers without a Protocol bump.
+    """
 
     gpu_type: str
     gpu_count: int = 1
@@ -119,6 +127,7 @@ class SpotSpec:
     ssh_key_id: str | None = None  # required by Prime/Shadeform
     region: str | None = None
     env: dict[str, str] = field(default_factory=dict)
+    extras: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
