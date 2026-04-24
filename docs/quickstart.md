@@ -119,6 +119,7 @@ The Stop hooks parse these automatically. Dedupe is atomic.
 - `README.md` — why / what / how
 - `docs/ARCHITECTURE.md` — how the components fit together
 - `docs/PORTS.md` — every port cited to source + line
-- `docs/STARS.md` — positioning + roadmap
+- `SECURITY.md` — risk surfaces + hardening checklist
+- `CHANGELOG.md` — what shipped in each release
 
 Open an issue if something breaks. Every script has a `--help`.
