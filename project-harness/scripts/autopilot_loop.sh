@@ -143,6 +143,9 @@ fi
 
 emit start "autopilot online pid=$$"
 
+# Reap any zombie claims from a prior crashed run before starting fresh.
+python3 "$ROOT/scripts/queue.py" reap --older-than-hours 1 >&2 || true
+
 ITERATION=0
 CONSECUTIVE_FAILURES=0
 COOLDOWN_SECONDS="$COOLDOWN_BASE_SECONDS"

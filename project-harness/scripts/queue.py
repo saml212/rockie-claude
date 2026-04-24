@@ -161,15 +161,61 @@ def cmd_drop(args) -> int:
 
 def cmd_release(args) -> int:
     conn = connect()
+    # Only the original claimant (or an admin with --force) can release;
+    # otherwise a concurrent session could disrupt another's run.
+    if args.force:
+        where = "WHERE id = ? AND status='claimed'"
+        params = (args.id,)
+    else:
+        where = "WHERE id = ? AND status='claimed' AND claimed_by = ?"
+        params = (args.id, session_id())
     n = conn.execute(
-        "UPDATE experiment_queue SET status='pending', claimed_at=NULL, claimed_by=NULL "
-        "WHERE id = ? AND status='claimed'",
-        (args.id,),
+        f"UPDATE experiment_queue SET status='pending', claimed_at=NULL, claimed_by=NULL {where}",
+        params,
     ).rowcount
     if n == 0:
-        print(f"no claimed queue item #{args.id}", file=sys.stderr)
+        print(
+            f"no claimed item #{args.id} owned by session '{session_id()}' "
+            f"(use --force to release someone else's claim)",
+            file=sys.stderr,
+        )
         return 2
     print(f"[queue] #{args.id} released back to pending")
+    return 0
+
+
+def cmd_reap(args) -> int:
+    """Transition zombie 'claimed' rows older than --older-than-hours back to pending.
+
+    When autopilot_loop dies mid-iteration (kill -9, power loss,
+    preemption), the queue row is left stuck in 'claimed'. Without a
+    reaper, the queue slowly fills with zombies and auto-refill's
+    positive feedback makes it worse.
+    """
+    cutoff_hours = args.older_than_hours
+    conn = connect()
+    rows = conn.execute(
+        f"""
+        UPDATE experiment_queue
+        SET status='pending',
+            claimed_at=NULL,
+            claimed_by=NULL,
+            notes = coalesce(notes || E'\n', '') ||
+                    'reaped at ' || datetime('now') ||
+                    ' (zombie claim > {cutoff_hours}h)'
+        WHERE project = ?
+          AND status = 'claimed'
+          AND claimed_at IS NOT NULL
+          AND (julianday('now') - julianday(claimed_at)) * 24.0 > ?
+        RETURNING id
+        """,
+        (project_name(), cutoff_hours),
+    ).fetchall()
+    if not rows:
+        print(f"[queue-reap] no zombies older than {cutoff_hours}h")
+        return 0
+    ids = ", ".join(f"#{r['id']}" for r in rows)
+    print(f"[queue-reap] released {len(rows)} zombie claim(s) back to pending: {ids}")
     return 0
 
 
@@ -252,7 +298,14 @@ def main() -> int:
     drp.set_defaults(func=cmd_drop)
 
     rp = sub.add_parser("release", help="Release a claim back to pending")
-    rp.add_argument("id", type=int); rp.set_defaults(func=cmd_release)
+    rp.add_argument("id", type=int)
+    rp.add_argument("--force", action="store_true",
+                    help="Release a claim owned by a different session")
+    rp.set_defaults(func=cmd_release)
+
+    rep = sub.add_parser("reap", help="Release zombie claims older than N hours")
+    rep.add_argument("--older-than-hours", type=float, default=2.0)
+    rep.set_defaults(func=cmd_reap)
 
     lp = sub.add_parser("list", help="List items")
     lp.add_argument("--status", choices=sorted(VALID_STATUS))
