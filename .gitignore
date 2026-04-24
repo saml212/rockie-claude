@@ -33,6 +33,12 @@ Thumbs.db
 **/.claude/.state/clean-ok-*
 .team-runs/
 
+# Per-project autopilot config — executable by autopilot_loop.sh, so it
+# must never be committed to a public repo (arbitrary-code vector).
+**/.claude/autopilot.conf
+**/.claude/budget.toml
+**/.claude/project_id
+
 # User-global paste cache etc. shouldn't land here but belt-and-suspenders
 .claude/file-history/
 .claude/session-env/

