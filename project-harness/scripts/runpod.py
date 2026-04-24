@@ -76,7 +76,15 @@ def gql(query: str, *, timeout: int = 30) -> dict[str, Any]:
     req = urllib.request.Request(
         url,
         data=payload,
-        headers={"content-type": "application/json"},
+        headers={
+            "content-type": "application/json",
+            # RunPod sits behind Cloudflare; the default Python-urllib UA is
+            # blocked with "Cloudflare 1010 — Access denied". A real-looking
+            # UA gets through. (Curl has no UA problem because its default
+            # is `curl/…`, which Cloudflare allows.)
+            "user-agent": "idastone-runpod/0.1 (+https://github.com/saml212/idastone)",
+            "accept": "application/json",
+        },
         method="POST",
     )
     try:

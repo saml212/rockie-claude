@@ -149,6 +149,14 @@ project discovers a harness-level improvement, it can emit
 reviewed, verified patch (Generator/Verifier/Updater split — the agent
 never auto-pushes). See `project-harness/skills/propose-harness-change/SKILL.md`.
 
+## Environment variables
+
+Secrets (RunPod API key, ntfy topic, future provider keys) live in a
+gitignored `.env` file at the project root. Copy `.env.example`, fill
+in values, and load with `set -a; . .env; set +a`. See
+[docs/environment.md](docs/environment.md) for the full list of
+supported vars and rotation guidance.
+
 ## Further reading
 
 - [docs/quickstart.md](docs/quickstart.md) — 5-minute install + first commands
