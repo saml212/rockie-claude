@@ -30,10 +30,14 @@ print(d.get("cwd") or d.get("tool_input",{}).get("cwd",""))
 ' 2>/dev/null)
 PROBE_CWD="${CMD_CWD:-$PWD}"
 OWN_REPO="$(cd "$ROOT/.." 2>/dev/null && pwd -P)"
-# Resolve target repo root from cwd of the command
+# Resolve target repo root from cwd of the command.
+# ONLY enforce when TARGET_REPO is our own repo. Empty (no git repo at
+# all) or a different repo both skip — previous logic was "enforce if
+# TARGET_REPO is empty OR matches own", which blocked commits run from
+# non-git directories (architecture audit F2).
 TARGET_REPO=$(cd "$PROBE_CWD" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
-if [ -n "$TARGET_REPO" ] && [ "$TARGET_REPO" != "$OWN_REPO" ]; then
-  echo "[$(date -Iseconds)] pre-commit-gate: skipped (repo=$TARGET_REPO != own=$OWN_REPO)" >> "$ROOT/memory/hook.log"
+if [ -z "$TARGET_REPO" ] || [ "$TARGET_REPO" != "$OWN_REPO" ]; then
+  echo "[$(date -Iseconds)] pre-commit-gate: skipped (repo=${TARGET_REPO:-<none>} != own=$OWN_REPO)" >> "$ROOT/memory/hook.log"
   exit 0
 fi
 

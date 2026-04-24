@@ -17,17 +17,22 @@ import sys,json
 d=json.load(sys.stdin)
 print(d.get("tool_input",{}).get("command",""))' 2>/dev/null)
 
-# Fast path: must match a training-launch pattern
-echo "$CMD" | grep -qE '(python3?|accelerate|torchrun|deepspeed)[[:space:]].*\.py' || exit 0
+# Strip `#` shell-comments so `python3 train.py # --smoke` can't bypass
+# the real-training check by putting flags in a comment (security M-2).
+CMD_NO_COMMENT="${CMD%%#*}"
+
+# Fast path: must match a training-launch pattern. Broadened vs prior
+# `python3?` — that missed `python3.11`, `python3.12`, etc. (security M-2).
+echo "$CMD_NO_COMMENT" | grep -qE '(python[0-9]*(\.[0-9]+)?|accelerate|torchrun|deepspeed)[[:space:]].*\.py' || exit 0
 
 # Extract the .py target from the command. Prefer the last .py token — handles
 # "torchrun --nproc-per-node 8 src/train.py --arg X" layouts.
-SCRIPT_PATH=$(echo "$CMD" | grep -oE '[[:graph:]]+\.py' | tail -1)
+SCRIPT_PATH=$(echo "$CMD_NO_COMMENT" | grep -oE '[[:graph:]]+\.py' | tail -1)
 [ -z "$SCRIPT_PATH" ] && exit 0
 
-# If the command looks like a SMOKE TEST itself (--smoke, --dry-run, --test),
-# don't require its own sentinel.
-if echo "$CMD" | grep -qE '(--smoke|--dry[-_]?run|--test|--quick)'; then
+# Smoke-test exceptions — check the comment-stripped string so a `# --smoke`
+# tail can't smuggle a real training command through.
+if echo "$CMD_NO_COMMENT" | grep -qE '(--smoke|--dry[-_]?run|--test|--quick)'; then
   exit 0
 fi
 
@@ -38,7 +43,7 @@ import sys,json
 d=json.load(sys.stdin)
 print(d.get("cwd") or d.get("tool_input",{}).get("cwd",""))' 2>/dev/null)
 TARGET_REPO=$(cd "${CWD_JSON:-$PWD}" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
-if [ -n "$TARGET_REPO" ] && [ "$TARGET_REPO" != "$OWN_REPO" ]; then
+if [ -z "$TARGET_REPO" ] || [ "$TARGET_REPO" != "$OWN_REPO" ]; then
   exit 0
 fi
 

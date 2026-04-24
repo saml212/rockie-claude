@@ -57,7 +57,14 @@ def project_name() -> str:
 def session_id() -> str:
     # The Claude Code hook system passes session_id in the hook payload; for
     # CLI use, fall back to the env var or "cli".
-    return os.environ.get("CLAUDE_SESSION_ID") or os.environ.get("SESSION_ID") or "cli"
+    #
+    # An empty CLAUDE_SESSION_ID would previously generate the key
+    # `session::tokens`, which silently bypassed any ceilings (security
+    # audit M-1). Reject empty strings → fall through to "cli".
+    s = os.environ.get("CLAUDE_SESSION_ID") or os.environ.get("SESSION_ID")
+    if s and s.strip():
+        return s.strip()
+    return "cli"
 
 
 def connect() -> sqlite3.Connection:
