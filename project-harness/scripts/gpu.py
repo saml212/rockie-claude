@@ -721,6 +721,166 @@ def cmd_cost(args) -> int:
     return 0
 
 
+def cmd_dashboard(args) -> int:
+    """One-screen human dashboard. The fastest path from "is the agent
+    burning money?" to a yes/no answer.
+
+    Sections (top to bottom):
+      1. Header with project + total burn rate + cumulative.
+      2. Per-provider rows: status icon, running/idle, $/hr, cumulative,
+         clickable billing URL.
+      3. Budget gauge if a dollars ceiling is configured.
+      4. Idle-storage warning if any (paying for nothing → terminate).
+      5. Recent preemption events (last 30 min) if any.
+      6. Footer with timestamp + reconcile-age so users can spot stale data.
+    """
+    providers = discover_providers(args.providers)
+
+    # Reconcile silently so the cumulative numbers we display are fresh.
+    if providers:
+        reconcile_all(providers, verbose=False)
+
+    conn = _db()
+    project = _project_name()
+
+    # Per-provider snapshot
+    provider_rows: list[dict[str, Any]] = []
+    for p in providers:
+        try:
+            spend = p.current_spend()
+        except ProviderError as e:
+            provider_rows.append({"provider": p.name, "error": str(e), "billing_url": p.billing_url})
+            continue
+        cum_row = conn.execute(
+            """
+            SELECT COALESCE(SUM(accrued_dollars), 0) AS total
+            FROM gpu_pods
+            WHERE provider = ? AND COALESCE(project, ?) = ?
+            """,
+            (p.name, project, project),
+        ).fetchone()
+        provider_rows.append({
+            "provider": p.name,
+            "running": spend.running_pods,
+            "idle_gb": spend.idle_volume_gb,
+            "compute_per_hr": spend.compute_per_hr,
+            "storage_per_hr": spend.storage_per_hr,
+            "total_per_hr": spend.compute_per_hr + spend.storage_per_hr,
+            "cumulative_usd": float(cum_row["total"] or 0),
+            "billing_url": p.billing_url,
+        })
+
+    grand_per_hr = sum(r.get("total_per_hr", 0) for r in provider_rows)
+    grand_cumulative = sum(r.get("cumulative_usd", 0) for r in provider_rows)
+
+    # Budget ceiling (optional)
+    ceiling_row = conn.execute(
+        """
+        SELECT value FROM budget_ceilings
+        WHERE key = ? OR key = 'project:dollars'
+        ORDER BY (key = ?) DESC LIMIT 1
+        """,
+        (f"project:{project}:dollars", f"project:{project}:dollars"),
+    ).fetchone() if _table_exists(conn, "budget_ceilings") else None
+    ceiling = float(ceiling_row["value"]) if ceiling_row else None
+
+    # Recent preemption events
+    preempts = conn.execute(
+        """
+        SELECT provider, gpu_type, ts, reason
+        FROM preemption_events
+        WHERE ts > datetime('now', '-30 minutes')
+        ORDER BY ts DESC LIMIT 5
+        """
+    ).fetchall()
+
+    # Reconcile age
+    last_reconcile_age = None
+    last_ts_file = STATE_DIR / "last_reconcile_ts"
+    if last_ts_file.exists():
+        try:
+            last_reconcile_age = int(time.time()) - int(last_ts_file.read_text().strip())
+        except (ValueError, OSError):
+            pass
+
+    # ── Render ──
+    box_w = 72
+    title = f" GPU spend dashboard · project={project} "
+    print("┌" + title.center(box_w - 2, "─") + "┐")
+
+    # Top-line burn + cumulative
+    burn_str = f"${grand_per_hr:.4f}/hr"
+    cum_str = f"${grand_cumulative:.4f} cumulative"
+    daily = grand_per_hr * 24
+    line = f"  ▶ live rate: {burn_str:>16}   ≈ ${daily:.2f}/day   ·   {cum_str}"
+    print("│" + line.ljust(box_w - 2) + "│")
+    print("├" + "─" * (box_w - 2) + "┤")
+
+    # Per-provider rows
+    if not provider_rows:
+        print("│" + "  (no providers configured — set RUNPOD_API_KEY / VAST_API_KEY in .env)".ljust(box_w - 2) + "│")
+    for r in provider_rows:
+        if "error" in r:
+            line = f"  ✗ {r['provider']:10} ERROR: {r['error'][:40]}"
+            print("│" + line.ljust(box_w - 2) + "│")
+            continue
+        icon = "▶" if r["running"] > 0 else ("·" if r["idle_gb"] > 0 else "○")
+        rate_str = f"${r['total_per_hr']:.4f}/hr"
+        cum_str = f"${r['cumulative_usd']:.4f}"
+        line = (
+            f"  {icon} {r['provider']:10} "
+            f"running={r['running']:<2} idle={r['idle_gb']:>4}GB  "
+            f"{rate_str:>12}  {cum_str:>10}"
+        )
+        print("│" + line.ljust(box_w - 2) + "│")
+        url_line = f"      → {r['billing_url']}"
+        print("│" + url_line.ljust(box_w - 2) + "│")
+
+    # Budget gauge
+    if ceiling is not None and ceiling > 0:
+        pct = grand_cumulative / ceiling
+        bar_w = 40
+        filled = min(bar_w, int(pct * bar_w))
+        bar = "█" * filled + "░" * (bar_w - filled)
+        warn = " ⚠ OVER" if pct >= 1.0 else (" ⚠" if pct >= 0.8 else "")
+        print("├" + "─" * (box_w - 2) + "┤")
+        line = f"  budget: [{bar}] {pct*100:.1f}% of ${ceiling:.2f}{warn}"
+        print("│" + line.ljust(box_w - 2) + "│")
+
+    # Idle-storage warning
+    idle_total = sum(r.get("idle_gb", 0) for r in provider_rows if "error" not in r)
+    if idle_total > 0 and grand_per_hr > 0:
+        running_total = sum(r.get("running", 0) for r in provider_rows if "error" not in r)
+        if running_total == 0:
+            print("├" + "─" * (box_w - 2) + "┤")
+            line = f"  ⚠ {idle_total}GB on stopped pods accruing storage. Terminate to stop bleed."
+            print("│" + line.ljust(box_w - 2) + "│")
+
+    # Preemption events
+    if preempts:
+        print("├" + "─" * (box_w - 2) + "┤")
+        line = f"  ⚡ {len(preempts)} preemption(s) in last 30 min:"
+        print("│" + line.ljust(box_w - 2) + "│")
+        for ev in preempts:
+            line = f"      {ev['ts']}  {ev['provider']}/{ev['gpu_type']}"
+            print("│" + line.ljust(box_w - 2) + "│")
+
+    # Footer
+    print("├" + "─" * (box_w - 2) + "┤")
+    age_str = f"{last_reconcile_age}s ago" if last_reconcile_age is not None else "—"
+    line = f"  reconciled {age_str}    `gpu.py cost --json` for LLM-readable"
+    print("│" + line.ljust(box_w - 2) + "│")
+    print("└" + "─" * (box_w - 2) + "┘")
+    return 0
+
+
+def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    ).fetchone()
+    return row is not None
+
+
 # ─── argparse ──────────────────────────────────────────────────────────────
 
 
@@ -828,6 +988,13 @@ def main() -> int:
     _add_providers_arg(cp_cost)
     cp_cost.add_argument("--json", action="store_true", help="machine-readable summary (LLM-ergonomic)")
     cp_cost.set_defaults(func=cmd_cost)
+
+    db = sub.add_parser(
+        "dashboard",
+        help="One-screen human dashboard: live rates, cumulative, billing URLs, budget gauge",
+    )
+    _add_providers_arg(db)
+    db.set_defaults(func=cmd_dashboard)
 
     args = p.parse_args()
     if not args.cmd:
