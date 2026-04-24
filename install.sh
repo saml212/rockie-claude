@@ -233,6 +233,130 @@ if [ ! -f "$TARGET_PROJECT/CLAUDE.md" ]; then
   echo "──────────────────────────────────────────────────────────────"
 fi
 
+# ── GPU provider credential wizard ───────────────────────────────────────
+# Walk the user through configuring at least one GPU provider — the
+# agent can't provision GPUs without one, and 2+ unlocks preemption
+# survivability (router hops on OutOfStock/BidRejected).
+#
+# Interactive: per-provider y/N + key prompt + live curl validation.
+# Non-interactive (CI): copy .env.example → .env if missing, print
+# guidance, return without prompting.
+credentials_wizard() {
+  local target_env="$TARGET_PROJECT/.env"
+  local source_template="$IDASTONE/.env.example"
+
+  # Ensure a .env exists so users have a documented starting point.
+  if [ ! -f "$target_env" ] && [ -f "$source_template" ]; then
+    cp "$source_template" "$target_env"
+    chmod 600 "$target_env"
+    echo "[+] created $target_env from .env.example"
+  fi
+
+  if [ "$ASSUME_YES" = "1" ]; then
+    echo ""
+    echo "non-interactive install: skipping GPU provider setup wizard."
+    echo "Add provider keys to $target_env to enable gpu.py."
+    echo "See docs/providers-setup.md for signup walkthroughs."
+    return 0
+  fi
+
+  echo ""
+  echo "──────────────────────────────────────────────────────────────"
+  echo " GPU provider setup"
+  echo "──────────────────────────────────────────────────────────────"
+  echo "idastone provisions GPUs through one or more providers. Configure"
+  echo "at least one to use the agent's autonomous-provisioning loop."
+  echo ""
+  echo "  1 provider  → single-provider works, no preemption survivability"
+  echo "  2 providers → router hops on preemption; recommended for runs >1hr"
+  echo "  3+          → arbitrage on price + survivability across regions"
+  echo ""
+
+  local configured=0
+
+  _wizard_setup_one() {
+    # $1 display_name  $2 env_var  $3 signup_url  $4 probe-fn-name
+    local name="$1" env_var="$2" url="$3" probe_fn="$4"
+    if grep -E "^${env_var}=.+" "$target_env" >/dev/null 2>&1; then
+      echo "  ✓ $name: already configured ($env_var present)"
+      configured=$((configured+1))
+      return 0
+    fi
+    printf "  Set up %s? [y/N] " "$name"
+    read -r ans
+    case "$ans" in [Yy]*) ;; *) echo "    skipped (sign up later: $url)"; return 0 ;; esac
+    echo "    → get key from: $url"
+    printf "    paste %s (hidden): " "$env_var"
+    stty -echo 2>/dev/null
+    read -r key
+    stty echo 2>/dev/null
+    echo ""
+    if [ -z "$key" ]; then
+      echo "    empty input, skipped"
+      return 0
+    fi
+    if "$probe_fn" "$key"; then
+      echo "    ✓ authenticated"
+    else
+      echo "    ⚠ probe didn't return 200 — saving anyway, verify at $url"
+    fi
+    # Idempotent upsert into .env
+    if grep -E "^${env_var}=" "$target_env" >/dev/null 2>&1; then
+      # macOS sed needs a backup suffix; clean it up
+      sed -i.bak -E "s|^${env_var}=.*|${env_var}=${key}|" "$target_env" && rm -f "${target_env}.bak"
+    else
+      printf '%s=%s\n' "$env_var" "$key" >> "$target_env"
+    fi
+    configured=$((configured+1))
+  }
+
+  _probe_runpod() {
+    curl -sf -X POST -H "Authorization: Bearer $1" \
+         -H 'Content-Type: application/json' \
+         -A 'idastone-install/0.1' \
+         -d '{"query":"query{myself{id}}"}' \
+         "https://api.runpod.io/graphql" >/dev/null 2>&1
+  }
+  _probe_vast() {
+    curl -sf -H "Authorization: Bearer $1" \
+         "https://console.vast.ai/api/v0/users/current/" >/dev/null 2>&1
+  }
+  _probe_prime() {
+    curl -sf -H "Authorization: Bearer $1" \
+         "https://api.primeintellect.ai/api/v1/pods/?limit=1" >/dev/null 2>&1
+  }
+  _probe_shadeform() {
+    curl -sf -H "X-API-KEY: $1" \
+         "https://api.shadeform.ai/v1/instances" >/dev/null 2>&1
+  }
+
+  _wizard_setup_one "RunPod"           "RUNPOD_API_KEY"     "https://www.runpod.io/console/user/settings"     _probe_runpod
+  _wizard_setup_one "Vast.ai"          "VAST_API_KEY"       "https://cloud.vast.ai/account/"                   _probe_vast
+  _wizard_setup_one "Prime Intellect"  "PRIME_API_KEY"      "https://app.primeintellect.ai/dashboard/tokens"   _probe_prime
+  _wizard_setup_one "Shadeform"        "SHADEFORM_API_KEY"  "https://platform.shadeform.ai/settings/api"       _probe_shadeform
+
+  echo ""
+  case "$configured" in
+    0)
+      echo "⚠ no providers configured."
+      echo "  The agent can't provision GPUs until you add at least one key to:"
+      echo "    $target_env"
+      echo "  See docs/providers-setup.md for full walkthroughs."
+      ;;
+    1)
+      echo "✓ 1 provider configured."
+      echo "  Single-provider operation works. No preemption survivability —"
+      echo "  consider adding a second provider before long autonomous runs."
+      ;;
+    *)
+      echo "✓ $configured providers configured. Preemption survivability enabled."
+      echo "  Run \`gpu.py auth\` to verify, \`gpu.py dashboard\` to see spend."
+      ;;
+  esac
+}
+
+credentials_wizard
+
 # ── ntfy nudge ───────────────────────────────────────────────────────────
 if [ -z "${NTFY_TOPIC:-}" ]; then
   echo ""
