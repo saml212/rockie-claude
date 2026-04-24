@@ -1,0 +1,41 @@
+# autopilot.conf — idastone continuous-operation config.
+#
+# This file is sourced by bash (NOT parsed as structured config), so:
+#   • values are shell variables; no quotes needed for simple strings
+#   • comments with #
+#   • don't put untrusted content here (never commit this file in
+#     a form that includes command-injection vectors)
+#
+# Copy this to .claude/autopilot.conf in your project and edit.
+
+# Command that launches one training run given a queue-item JSON on stdin.
+# The launcher must:
+#   1. parse the JSON to get the queue_id and hypothesis
+#   2. background the actual training process (nohup/&/disown)
+#   3. write the training PID to $PID_FILE
+#   4. ensure stdout+stderr go to $LOG_FILE
+#   5. return quickly (before training completes)
+# See examples/launch_experiment.example.sh for a template.
+LAUNCHER_CMD="bash scripts/launch_experiment.sh"
+
+# Where the launcher writes the PID of the training process.
+PID_FILE=".claude/.state/training_pid"
+
+# Where the launcher tees the training log.
+LOG_FILE=".claude/.state/training_log"
+
+# After this many CONSECUTIVE failures, sleep longer between attempts
+# (exponential back-off, capped at COOLDOWN_MAX_SECONDS).
+MAX_CONSECUTIVE_FAILURES=3
+
+# Starting cooldown (seconds) after the first consecutive failure cluster.
+COOLDOWN_BASE_SECONDS=300
+
+# Hard ceiling on the cooldown sleep. Anti-burn from arXiv 2604.05854.
+COOLDOWN_MAX_SECONDS=1800
+
+# Hard cap on total iterations. 0 = forever.
+MAX_ITERATIONS=0
+
+# Send a tier-1 ntfy push when the anti-burn cooldown engages?
+NTFY_ON_COOLDOWN=1
