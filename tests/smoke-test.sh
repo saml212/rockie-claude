@@ -28,7 +28,8 @@ SQLITE=/usr/bin/sqlite3
 
 IDASTONE="$(cd "$(dirname "$0")/.." && pwd)"
 WORK=$(mktemp -d -t idastone-smoke-XXXXXX)
-trap 'rm -rf "$WORK"' EXIT
+# Clean up any per-test tempdirs that escape the main WORK; set a broad trap.
+trap 'rm -rf "$WORK"; rm -rf /tmp/idastone-autopilot-* /tmp/idastone-migration-* /tmp/smoke-merge-* /tmp/smoke-idem-* 2>/dev/null' EXIT
 
 PASS=0
 FAIL=0
@@ -420,6 +421,124 @@ stop=[h["command"] for blk in d["hooks"].get("Stop", []) for h in blk.get("hooks
 print(stop.count("bash .claude/hooks/learn-capture.sh"))')
 assert "installer is idempotent (no hook duplication on re-run)" "1" "$COUNT"
 rm -rf "$IDEM"
+
+section "autopilot.conf safe parser"
+APC="$WORK/apc"
+mkdir -p "$APC/.claude/scripts" "$APC/.claude/memory"
+cp "$IDASTONE/project-harness/scripts/autopilot_loop.sh" "$APC/.claude/scripts/"
+# Malicious values must be refused (command substitution, backticks, non-allowlisted keys).
+cat > "$APC/.claude/autopilot.conf" <<'EOF'
+LAUNCHER_CMD="$(touch /tmp/idastone-pwn-$$)"
+EOF
+bash "$APC/.claude/scripts/autopilot_loop.sh" >/dev/null 2>&1
+[ -e /tmp/idastone-pwn-$$ ] && { rm -f /tmp/idastone-pwn-$$; fail "autopilot.conf: command substitution executed"; } || ok "autopilot.conf: refuses \$(…) command substitution"
+
+cat > "$APC/.claude/autopilot.conf" <<'EOF'
+LAUNCHER_CMD=`id`
+EOF
+bash "$APC/.claude/scripts/autopilot_loop.sh" 2>&1 | grep -q 'refusing' && ok "autopilot.conf: refuses backticks" || fail "autopilot.conf: backtick value accepted"
+
+cat > "$APC/.claude/autopilot.conf" <<'EOF'
+PATH=/evil/bin
+EOF
+bash "$APC/.claude/scripts/autopilot_loop.sh" 2>&1 | grep -q 'not in allow-list' && ok "autopilot.conf: refuses non-allowlisted key" || fail "autopilot.conf: accepted non-allowlisted key"
+
+section "pre-train-gate bypass attempts"
+mkdir -p "$PROJ/src-py311"
+cat > "$PROJ/src-py311/train.py" <<'EOF'
+print("v1")
+EOF
+bash "$PROJ/.claude/scripts/dry_run_gate.sh" register "$PROJ/src-py311/train.py" >/dev/null
+
+# Bypass attempt 1: python3.11 — should now be caught by broadened regex.
+# Sentinel valid, so gate should pass cleanly; verify that python3.11 is RECOGNIZED
+# by temporarily invalidating the sentinel and confirming the gate blocks.
+echo "edited" >> "$PROJ/src-py311/train.py"   # invalidate sentinel
+IN=$(python3 -c "import json;print(json.dumps({'tool_input':{'command':'python3.11 src-py311/train.py','cwd':'$PROJ'}}))")
+echo "$IN" | bash "$PROJ/.claude/hooks/pre-train-gate.sh" >/dev/null 2>&1
+[ "$?" -eq 2 ] && ok "pre-train-gate: python3.11 is recognized as training (no longer bypass)" || fail "pre-train-gate: python3.11 slipped through"
+
+# Bypass attempt 2: shell comment `# --smoke` should NOT count as smoke exception
+IN=$(python3 -c "import json;print(json.dumps({'tool_input':{'command':'python3 src-py311/train.py  # --smoke','cwd':'$PROJ'}}))")
+echo "$IN" | bash "$PROJ/.claude/hooks/pre-train-gate.sh" >/dev/null 2>&1
+[ "$?" -eq 2 ] && ok "pre-train-gate: '# --smoke' comment no longer bypass" || fail "pre-train-gate: comment bypass still works"
+
+section "schema migration walker"
+MGT=$(mktemp -d -t idastone-migration-XXXXXX)
+mkdir -p "$MGT/.claude/scripts" "$MGT/.claude/memory/migrations"
+cp "$IDASTONE/project-harness/memory/schema.sql" "$MGT/.claude/memory/"
+cp "$IDASTONE/project-harness/scripts/init_db.sh" "$MGT/.claude/scripts/"
+cat > "$MGT/.claude/memory/migrations/002_add_test_col.sql" <<'SQL'
+ALTER TABLE experiments ADD COLUMN ci_test_col TEXT;
+SQL
+bash "$MGT/.claude/scripts/init_db.sh" >/dev/null 2>&1
+V1=$("$SQLITE" "$MGT/.claude/memory/workflow.db" "PRAGMA user_version;")
+assert "migration: first run bumps user_version to 2" "2" "$V1"
+# Re-run must not re-apply (idempotent).
+bash "$MGT/.claude/scripts/init_db.sh" >/dev/null 2>&1
+V2=$("$SQLITE" "$MGT/.claude/memory/workflow.db" "PRAGMA user_version;")
+assert "migration: second run is no-op (user_version stays 2)" "2" "$V2"
+rm -rf "$MGT"
+
+section "CLI --help smoke (import-error catcher)"
+for cli in journal.py queue.py calibration.py budget.py convergence.py apply_patch.py stage.py; do
+  # Real test: compile the file. If it imports at parse-time, syntax/import
+  # errors show up; otherwise we're testing runtime behaviour of --help
+  # which some subcommand-style CLIs return non-zero on.
+  python3 -c "import py_compile; py_compile.compile('$PROJ/.claude/scripts/$cli', doraise=True)" 2>/dev/null \
+    && ok "$cli compiles cleanly" || fail "$cli: syntax error"
+  # And --help should never traceback.
+  HELP_ERR=$(python3 "$PROJ/.claude/scripts/$cli" --help 2>&1 >/dev/null)
+  if echo "$HELP_ERR" | grep -q 'Traceback'; then
+    fail "$cli --help produced a traceback"
+    echo "$HELP_ERR" | head -5
+  else
+    ok "$cli --help runs without traceback"
+  fi
+done
+
+section "autopilot loop one-iteration end-to-end (mock launcher)"
+AP=$(mktemp -d -t idastone-autopilot-XXXXXX)
+mkdir -p "$AP/.claude/scripts" "$AP/.claude/memory" "$AP/.claude/.state"
+cp "$IDASTONE/project-harness/memory/schema.sql"      "$AP/.claude/memory/"
+for s in init_db.sh queue.py zcm.sh autopilot_loop.sh notify.sh rotate_hook_log.sh; do
+  cp "$IDASTONE/project-harness/scripts/$s" "$AP/.claude/scripts/"
+done
+bash "$AP/.claude/scripts/init_db.sh" >/dev/null 2>&1
+# Mock launcher: writes PID of a 1s sleep to PID_FILE, writes a log with a step, returns.
+cat > "$AP/mock_launch.sh" <<'SH'
+#!/usr/bin/env bash
+set -e
+mkdir -p "$(dirname "$PID_FILE")" "$(dirname "$LOG_FILE")"
+echo "step 1: loss=3.42" > "$LOG_FILE"
+# Short-lived "training" so ZCM completes quickly
+sleep 1 &
+echo $! > "$PID_FILE"
+exit 0
+SH
+chmod +x "$AP/mock_launch.sh"
+cat > "$AP/.claude/autopilot.conf" <<EOF
+LAUNCHER_CMD="bash $AP/mock_launch.sh"
+PID_FILE=".claude/.state/training_pid"
+LOG_FILE=".claude/.state/training_log"
+MAX_ITERATIONS=1
+MAX_CONSECUTIVE_FAILURES=10
+NTFY_ON_COOLDOWN=0
+EOF
+export PROJECT=autopilot-e2e CLAUDE_SESSION_ID=autopilot-e2e
+python3 "$AP/.claude/scripts/queue.py" add --hypothesis "mock experiment" --priority 1 --metric val_loss --predicted-delta -0.05 >/dev/null
+# Run one iteration (MAX_ITERATIONS=1) — should claim + launch + ZCM + loop exit.
+(cd "$AP" && bash ".claude/scripts/autopilot_loop.sh" >/dev/null 2>&1) &
+LOOP_PID=$!
+wait "$LOOP_PID" 2>/dev/null
+EVENTS="$AP/.claude/memory/autopilot_events.jsonl"
+if [ -f "$EVENTS" ] && grep -q '"kind":"claimed"' "$EVENTS" && grep -q '"kind":"training-started"' "$EVENTS"; then
+  ok "autopilot loop: claim → launcher-fires → ZCM cycle completes one iteration"
+else
+  fail "autopilot loop: events.jsonl missing expected kinds"
+  [ -f "$EVENTS" ] && cat "$EVENTS" | tail -5
+fi
+rm -rf "$AP"
 
 section "FTS5 hyphen sanitization"
 if "$SQLITE" "$DB" "SELECT COUNT(*) FROM learnings_fts WHERE learnings_fts MATCH 'gradient-clipping'" >/dev/null 2>&1; then

@@ -89,10 +89,16 @@ if [ -f "$CONF" ]; then
       \"*\") val="${val#\"}"; val="${val%\"}" ;;
       \'*\') val="${val#\'}"; val="${val%\'}" ;;
     esac
-    # Assign — this is now a plain literal, not an eval.
+    # Assign — this is now a plain literal, not an eval. Export so the
+    # launcher subshell (bash -c "$LAUNCHER_CMD") inherits PID_FILE /
+    # LOG_FILE etc. as documented in autopilot.conf.example.
     printf -v "$key" '%s' "$val"
+    export "$key"
   done < "$CONF"
 fi
+# Also export the defaults set above, so launchers that read env vars
+# see the resolved values even when the user's conf omits them.
+export PID_FILE LOG_FILE MAX_CONSECUTIVE_FAILURES COOLDOWN_BASE_SECONDS COOLDOWN_MAX_SECONDS MAX_ITERATIONS NTFY_ON_COOLDOWN
 
 emit() {
   local kind="$1" msg="$2"
