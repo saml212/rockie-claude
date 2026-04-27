@@ -1,11 +1,22 @@
-# Provider adapter implementation spec — Vast.ai, Prime Intellect, Shadeform
+# Provider adapter implementation spec — Vast.ai, Prime Intellect
 
-**Audience:** The next agent, who will write `providers/vast.py`,
-`providers/primeintellect.py`, `providers/shadeform.py` matching the
-`Protocol` in `providers/base.py` and the shape of the existing
+**Audience:** The next agent, who will write `providers/vast.py` and
+`providers/primeintellect.py` matching the `Protocol` in
+`providers/base.py` and the shape of the existing
 `project-harness/scripts/runpod.py`.
 
 **Research date:** 2026-04-23. All URLs verified live at that time.
+
+**Update 2026-04-27:** §C (Shadeform) was originally part of this spec
+but Shadeform was dropped before being implemented — see
+`docs/_internal/market-research/SYNTHESIS.md`. The summary: no spot
+tier (contradicts the harness's spot-first design), redundant upstream
+coverage (Lambda/CoreWeave/Crusoe all reachable directly if needed),
+slow 2–10min boot. Replaced by `providers/datacrunch.py` (Verda Cloud)
+which has a real spot tier and EU-first geography. The Verda spec
+lives in `providers/datacrunch.py`'s module docstring + the OpenAPI
+schema at https://api.verda.com/v1/openapi.json — there's no parallel
+§D entry here for it.
 
 ---
 
@@ -13,7 +24,7 @@
 
 ```python
 class Provider(Protocol):
-    name: str                          # "vast", "prime", "shadeform"
+    name: str                          # "vast", "prime", ...
     supports_bid_auction: bool         # True for bid-based spot; False for fixed-price or on-demand only
     supports_pause_preserve: bool      # True if preempted pods retain volume
     preemption_signal: Literal["none", "warning-secs", "hard-kill"]
@@ -417,177 +428,15 @@ class PrimeProvider:
 
 ---
 
-## C. Shadeform
-
-### C.1 Auth
-- **Key source:** https://platform.shadeform.ai/settings/api → "Create
-  API Key". Shown **once**; up to 10 keys per workspace; admin-level
-  for all.
-- **Env var:** `SHADEFORM_API_KEY`.
-- **Header:** `X-API-KEY: <key>`.
-- Billing: Shadeform requires a payment method before
-  `/instances/create` succeeds.
-
-### C.2 Docs
-- Root: https://docs.shadeform.ai/
-- Auth page: https://docs.shadeform.ai/api-reference/authentication
-- Endpoint pages: https://docs.shadeform.ai/api-reference/instances/{instances-types,instances-create,instances,instances-info,instances-delete}
-- OpenAPI: https://docs.shadeform.ai/openapi.yaml
-
-### C.3 Base URL
-`https://api.shadeform.ai/v1`
-
-### C.4 List types (`list_gpus` / `price`)
-
-```bash
-curl "https://api.shadeform.ai/v1/instances/types?gpu_type=H100&num_gpus=1&available=true&sort=price" \
-  -H "X-API-KEY: $SHADEFORM_API_KEY"
-```
-
-Response:
-
-```json
-{"instance_types":[{"cloud":"hyperstack","shade_instance_type":"H100",
-  "cloud_instance_type":"n3-H100x1","configuration":{
-    "memory_in_gb":180,"storage_in_gb":1000,"vcpus":28,"num_gpus":1,
-    "gpu_type":"H100","vram_per_gpu_in_gb":80,"interconnect":"sxm5",
-    "os_options":["ubuntu22.04_cuda12.2_shade_os"]},
-  "hourly_price":229,
-  "deployment_type":"vm",
-  "availability":[{"region":"canada-1","available":true,"display_name":"CA"}],
-  "boot_time":{"min":120,"max":600}}]}
-```
-
-- `hourly_price` is **cents**, not dollars — divide by 100. This is a
-  footgun.
-- Filters: `cloud`, `region`, `num_gpus`, `gpu_type`,
-  `shade_instance_type`, `available`, `sort=price`.
-- `cloud` field tells you which upstream provider (e.g. `hyperstack`,
-  `lambda`, `paperspace`, `scaleway`, `massedcompute`). Adapter should
-  surface this in `Pod.metadata["backend"]` so the dashboard can
-  display `provider=shadeform/hyperstack` etc.
-
-### C.5 Create (async)
-
-```bash
-curl -X POST https://api.shadeform.ai/v1/instances/create \
-  -H "X-API-KEY: $SHADEFORM_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "cloud": "hyperstack",
-    "region": "canada-1",
-    "shade_instance_type": "H100",
-    "shade_cloud": true,
-    "name": "idastone-ondemand",
-    "os": "ubuntu22.04_cuda12.2_shade_os",
-    "ssh_key_id": "78a0dd5a-dbb1-4568-b55c-5e7e0a8b0c40"
-  }'
-```
-
-Response: `{"id": "<uuid>"}` with instance in status `creating`.
-
-**Poll loop:** `GET /v1/instances/{id}/info` until `status == "active"`
-(or `error`). States: `creating → pending_provider → pending → active`.
-Typical boot `120–600s` per `boot_time`. Adapter should use a
-15-minute ceiling. On `active`, the response contains `ip`,
-`ssh_user`, `ssh_port`.
-
-### C.6 List / delete
-- `GET /v1/instances` — all non-deleted.
-- `GET /v1/instances/{id}/info` — detail (includes `status_details`
-  for debug strings).
-- `POST /v1/instances/{id}/delete` — returns 200 immediately;
-  transitions to `deleting → deleted`. **Billing stops at the
-  `deleting` transition** per
-  https://docs.shadeform.ai/api-reference/instances/instances-delete.
-
-### C.7 Spot / preemption
-- **Confirmed: Shadeform has no native spot / bid / preemptible tier
-  as of 2026-04.** Every row returned by `/instances/types` is
-  on-demand or reserved. No `isSpot`, `bid_price`, or `interruptible`
-  fields exist in the OpenAPI spec.
-- → **Adapter flags:** `supports_bid_auction = False`,
-  `supports_pause_preserve = False` (delete is terminal — no stop/start
-  endpoint), `preemption_signal = "none"`.
-- `price()` must return `Price(min_bid=price.on_demand,
-  on_demand=price.on_demand, ...)` to satisfy the Protocol.
-- `create_spot()` is actually `create_ondemand` under the hood — the
-  router should call Shadeform **last**, after all native-spot
-  providers (RunPod, Vast, Prime) return `OutOfStock` / `BidRejected`.
-  Document this in the router's ranking config.
-
-### C.8 Errors
-- `400 {"message":"<reason>"}` — bad request.
-- `401 {"message":"unauthorized"}` → `AuthError`.
-- `402 {"message":"insufficient funds"}` → `AuthError`.
-- `409 {"message":"cloud out of capacity"}` on `/instances/create` →
-  `NoCapacity`.
-- Empty `instance_types` array with `available=true` filter →
-  `OutOfStock`.
-
-### C.9 Skeleton
-
-```python
-# providers/shadeform.py
-BASE = "https://api.shadeform.ai/v1"
-
-class ShadeformProvider:
-    name = "shadeform"
-    supports_bid_auction = False
-    supports_pause_preserve = False
-    preemption_signal = "none"
-
-    def _req(self, method, path, body=None):
-        req = urllib.request.Request(
-            f"{BASE}{path}",
-            data=json.dumps(body).encode() if body else None,
-            headers={"X-API-KEY": self.key,
-                     "Content-Type":"application/json"},
-            method=method)
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return json.loads(r.read())
-
-    def list_gpus(self, grep=None):
-        r = self._req("GET","/instances/types?available=true")
-        names = sorted({t["shade_instance_type"] for t in r["instance_types"]})
-        if grep: names = [n for n in names if grep.lower() in n.lower()]
-        return [GpuType(name=n, id=n) for n in names]
-
-    def price(self, gpu_type, n=1):
-        r = self._req("GET",
-            f"/instances/types?gpu_type={gpu_type}&num_gpus={n}&available=true&sort=price")
-        rows = [t for t in r["instance_types"]
-                if any(a["available"] for a in t.get("availability",[]))]
-        if not rows: raise OutOfStock(gpu_type)
-        p = rows[0]["hourly_price"] / 100.0     # cents → $
-        return Price(min_bid=p, on_demand=p, stock=len(rows),
-                     gpu_type_id=f"{rows[0]['cloud']}|{rows[0]['shade_instance_type']}")
-
-    def create_spot(self, spec, *, yes):
-        cloud, itype = spec.gpu_type_id.split("|")
-        if not yes: return None
-        r = self._req("POST", "/instances/create", {
-            "cloud": cloud, "region": spec.region,
-            "shade_instance_type": itype, "shade_cloud": True,
-            "name": spec.name, "os": "ubuntu22.04_cuda12.2_shade_os",
-            "ssh_key_id": spec.ssh_key_id})
-        pod_id = r["id"]
-        # (polling omitted — mirrors runpod.py loop)
-        return Pod(id=pod_id, provider="shadeform",
-                   metadata={"backend": cloud})
-```
-
----
-
 ## D. `NoCapacity` / `BidRejected` / `OutOfStock` detection matrix
 
-| Condition | Vast | Prime | Shadeform |
-|---|---|---|---|
-| **NoCapacity** (transient) | `PUT /asks/` → 200 with `{"success":false,"error":"no_such_ask"}` | `POST /pods/` → 409/503 body contains `"no capacity"` | `POST /instances/create` → 409 `"cloud out of capacity"` |
-| **BidRejected** | `PUT /asks/` → 200 with `{"success":false,"error":"bid_too_low"}` | No spot row in `/availability/gpus` (synthesize) | N/A (no spot tier) |
-| **OutOfStock** (structural) | `/bundles/` returns empty `offers` | `/availability/gpus` returns empty array | `/instances/types` returns empty `instance_types` |
-| **AuthError** | 401 + `Unauthorized` | 401 `{"detail":"Invalid API key"}` | 401 `{"message":"unauthorized"}` |
-| **Billing not set up** | 200 `{"success":false,"error":"insufficient_credit"}` | 402 `{"detail":"Insufficient credits"}` | 402 `{"message":"insufficient funds"}` |
+| Condition | Vast | Prime |
+|---|---|---|
+| **NoCapacity** (transient) | `PUT /asks/` → 200 with `{"success":false,"error":"no_such_ask"}` | `POST /pods/` → 409/503 body contains `"no capacity"` |
+| **BidRejected** | `PUT /asks/` → 200 with `{"success":false,"error":"bid_too_low"}` | No spot row in `/availability/gpus` (synthesize) |
+| **OutOfStock** (structural) | `/bundles/` returns empty `offers` | `/availability/gpus` returns empty array |
+| **AuthError** | 401 + `Unauthorized` | 401 `{"detail":"Invalid API key"}` |
+| **Billing not set up** | 200 `{"success":false,"error":"insufficient_credit"}` | 402 `{"detail":"Insufficient credits"}` |
 
 The router catches `NoCapacity`/`BidRejected`/`OutOfStock` and hops to
 the next provider. It propagates `AuthError` (terminal, don't retry
@@ -598,7 +447,7 @@ with different envvars set).
 
 ## E. Preemption detection loop
 
-None of these three providers push preemption events to a webhook in
+None of these providers pushes preemption events to a webhook in
 2026-04. All detection is **poll-based**:
 
 - **Vast:** `GET /instances/{id}/` every 60s. Trigger when
@@ -610,9 +459,6 @@ None of these three providers push preemption events to a webhook in
   `status in ("TERMINATED","ERROR")` and pod's `created_at` age <
   expected runtime (user-supplied `--hours`). No resume — adapter
   re-provisions via `create_spot` on the same provider or hops.
-- **Shadeform:** No spot tier → preemption loop effectively disabled.
-  Poll `/instances/{id}/info` only to detect provider-side failures
-  (`status="error"`). `preemption_signal = "none"` in the Protocol.
 
 Adapters expose a `poll_once(pod_id) -> PodStatus` method that the
 autopilot loop calls on every monitor tick. Centralizing this one
@@ -646,17 +492,6 @@ method keeps the preemption-events writer in one place.
    `echo "PRIME_SSH_KEY_ID=<uuid>" >> .env`
 7. Verify: `curl -H "Authorization: Bearer $PRIME_API_KEY" "https://api.primeintellect.ai/api/v1/pods/?limit=1"` → 200.
 
-### F.3 Shadeform
-1. Sign up at https://platform.shadeform.ai/
-2. Billing → Add payment method. (Shadeform charges Stripe; no
-   prepaid credits model.)
-3. SSH Keys → Upload public key, note the `ssh_key_id` UUID.
-4. Settings → API at https://platform.shadeform.ai/settings/api →
-   "Create API Key".
-5. Copy the key (shown once). Max 10 keys per workspace.
-6. `echo "SHADEFORM_API_KEY=<key>" >> .env` and
-   `echo "SHADEFORM_SSH_KEY_ID=<uuid>" >> .env`
-7. Verify: `curl -H "X-API-KEY: $SHADEFORM_API_KEY" https://api.shadeform.ai/v1/instances` → 200 `{"instances":[]}`.
 
 ---
 
@@ -695,25 +530,6 @@ method keeps the preemption-events writer in one place.
   transitive dep. Use `prime-sandboxes` in production builds or call
   REST directly (our choice).
 
-### G.3 Shadeform
-- **No spot tier.** This shapes the entire router: Shadeform is the
-  fallback-of-last-resort, called only after spot providers have
-  exhausted. Document this explicitly in the router's ranking config.
-- **Prices in cents, not dollars.** At least one GitHub issue reports
-  a user charged 100× expected because they forgot to divide.
-  Unit-test the `/100.0` conversion.
-- **No stop/start.** `/instances/{id}/delete` is the only exit; data
-  is lost. If a user wants "pause and resume later," they must
-  snapshot to S3/GCS manually before delete.
-- **Provider backend varies day-to-day.** Shadeform auto-routes to
-  whichever upstream has H100 capacity. That means SSH username,
-  port, even disk size behavior varies (one day `ubuntu`, next day
-  `root`). Always trust `ssh_user` and `ssh_port` from the `/info`
-  response — never hardcode.
-- **Boot time is 2–10 minutes.** Much slower than RunPod (30–60s).
-  Adapter's `create_spot` poll timeout must be ≥900s or creations
-  will appear to fail when they're actually still provisioning.
-
 ---
 
 ## Cost tracking across providers
@@ -739,7 +555,7 @@ Extend this into `scripts/gpu.py cost` that:
 
 The key design point: **each adapter is responsible for translating
 its own billing model into dollars-per-hour**. Some providers bill
-per-second (RunPod), some per-hour (Vast), some bundled (Shadeform).
+per-second (RunPod), some per-hour (Vast), some per-10min (Verda).
 The adapter returns a normalized `Spend(compute_per_hr, storage_per_hr,
 cumulative_estimate_usd)` and `gpu.py cost` just sums.
 
@@ -747,7 +563,6 @@ Also wire the `terminate` verb across providers:
 - RunPod: `podTerminate` (already in runpod.py)
 - Vast: `DELETE /api/v0/instances/{id}/`
 - Prime: `DELETE /api/v1/pods/{podId}`
-- Shadeform: `POST /v1/instances/{id}/delete`
 
 `stop` preserves volume (still paying storage); `terminate` is the
 final delete. Every adapter MUST expose both if the provider supports
@@ -769,21 +584,19 @@ A reasonable sprint for a future session:
    VAST_API_KEY after user signs up.
 4. Create `providers/primeintellect.py` using §B.9. Test after
    PRIME_API_KEY setup.
-5. Create `providers/shadeform.py` using §C.9. Test after
-   SHADEFORM_API_KEY setup.
-6. Add `preemption_events` table via `memory/migrations/002_preemption_events.sql`.
-7. Create `scripts/gpu.py` top-level router with:
-   - Ranked provider order: `[runpod, vast, prime, shadeform]`
+5. Add `preemption_events` table via `memory/migrations/004_preemption_events.sql` (renumbered after the migration-003 fix landed).
+6. Create `scripts/gpu.py` top-level router with:
+   - Ranked provider order: `[runpod, vast, datacrunch, prime]`
    - Cooldown filter: skip (provider, gpu_type) pairs with a
      preemption_events row within last 10-60 min (exponential backoff).
    - `--allow-on-demand` flag gating the final tier.
    - Same verb surface as `runpod.py` so the router is a drop-in.
-8. Extend `tests/smoke-test.sh` with router assertions using mocked
+7. Extend `tests/smoke-test.sh` with router assertions using mocked
    providers (don't hit live APIs in CI). Verify: hop on OutOfStock,
    cooldown filter, on-demand gate.
-9. Update `docs/providers-setup.md` with the account-setup flows from
+8. Update `docs/providers-setup.md` with the account-setup flows from
    §F.
-10. Extend `.env.example` with the new env vars.
+9. Extend `.env.example` with the new env vars.
 
 Don't try to do all of this in one commit. Incremental + smoke-tested
 per §8 is the style of the existing repo.

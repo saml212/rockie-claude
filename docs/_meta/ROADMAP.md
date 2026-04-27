@@ -92,14 +92,15 @@ Each is S effort, high leverage:
 
 Owned by the gpu-arbitrage agent (see `docs/_internal/gpu-arbitrage-agent-prompt.md`):
 
-- [ ] `providers/base.py` Protocol + dataclasses
-- [ ] `providers/runpod.py` refactor of CLI into class
-- [ ] `providers/vast.py` (spec §A)
-- [ ] `providers/primeintellect.py` (spec §B)
-- [ ] `providers/shadeform.py` (spec §C — on-demand only)
-- [ ] `gpu.py` router with cooldown + on-demand gate
-- [ ] Migration 003: `preemption_events`
-- [ ] Per-provider account-setup docs
+- [x] `providers/base.py` Protocol + dataclasses
+- [x] `providers/runpod.py` refactor of CLI into class
+- [x] `providers/vast.py` (spec §A)
+- [ ] `providers/primeintellect.py` (spec §B — pending account)
+- [x] ~~`providers/shadeform.py`~~ — **DROPPED 2026-04-27** (no spot tier, redundant upstream coverage; see `docs/_internal/market-research/SYNTHESIS.md`)
+- [x] `providers/datacrunch.py` — Verda Cloud (replaces what shadeform.py would have given us, with a real spot tier)
+- [x] `gpu.py` router with cooldown + on-demand gate
+- [x] Migration 004: `preemption_events` (renumbered from 003 after fix migration 003 added gpu_pods.project)
+- [x] Per-provider account-setup docs (`docs/providers-setup.md`)
 
 Status as of 2026-04-27: in flight; budget-reconcile.sh + .env.example
 already updated to expect `gpu.py reconcile`.

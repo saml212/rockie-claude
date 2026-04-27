@@ -10,12 +10,17 @@ expect it to drift. When in doubt, trust `git log` over this file.
 - Working in `~/Experiments/idastone`
 - Following the spec at `docs/providers-impl-spec.md`
 - Following the prompt at `docs/_internal/gpu-arbitrage-agent-prompt.md`
-- Already landed: `.env.example` extended with VAST/PRIME/SHADEFORM keys;
-  `budget-reconcile.sh` updated to call `gpu.py reconcile`;
-  `runpod.py` partially refactored toward `providers/runpod.py:RunPodProvider`
-  shape (CLI is now a thin wrapper).
-- In progress: `providers/base.py`, `providers/{vast,prime,shadeform}.py`,
-  `gpu.py` router, migration 003.
+- Already landed (2026-04-27): `providers/base.py` + Protocol;
+  `providers/runpod.py` (refactored from runpod.py CLI); `providers/vast.py`;
+  `providers/datacrunch.py` (Verda — replaced planned shadeform.py because
+  Shadeform was dropped after market research showed no spot tier and no
+  exclusive upstreams); `gpu.py` router with cooldown + on-demand gate;
+  migrations 003 (gpu_pods.project) + 004 (preemption_events);
+  `tests/fakes/*` for router smoke assertions; install.sh credential wizard;
+  `.env.example` for VAST/PRIME/DATACRUNCH; budget-reconcile.sh flipped to
+  gpu.py reconcile; `docs/providers-setup.md` and `docs/gpu-router.md`.
+- Pending (blocked on accounts): `providers/primeintellect.py`,
+  `providers/tensordock.py`, Hyperstack verification + adapter.
 - User pairs with this agent on API keys.
 
 ### Repo-organization research (returned 2026-04-27)

@@ -137,13 +137,16 @@ bumping. No `--bump` flag exists.
 
 **Date:** 2026-04-24
 **Choice:** Router order: try ranked spot providers (runpod →
-vast → prime) at each provider's min; only after all spot
-providers exhaust does Shadeform on-demand engage, gated by
-`--allow-on-demand`.
+vast → datacrunch → prime) at each provider's min; only with the
+explicit `--allow-on-demand` flag do on-demand-only providers
+engage. (As of 2026-04-27 the on-demand-only list is empty —
+Shadeform was dropped, Verda's spot tier covers EU geography.
+Flag stays for future on-demand additions.)
 **Reasoning:** Different providers have different scheduler
 states. A preemption on RunPod doesn't mean Vast has the same
-shortage. Shadeform charges 2× spot floor. Treating on-demand as
-fallback-of-last-resort costs less than treating it as preemption-
+shortage. On-demand providers charge ~2× spot floor. Treating
+on-demand as fallback-of-last-resort costs less than treating it
+as preemption-
 recovery.
 
 ## DEC-15: Failure-taxonomy enum is 3-value pre-classifier, not novel

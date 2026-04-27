@@ -104,7 +104,7 @@ Last big sweep: 2026-04-27.
 - `docs/environment.md` — `.env` pattern + rotation
 - `docs/PORTS.md` — 11-repo source-level review + 60-day arXiv scan + license matrix
 - `docs/self-hosted-runner.md` — Mac mini setup
-- `docs/providers-impl-spec.md` — implementation spec for next agent (Vast/Prime/Shadeform)
+- `docs/providers-impl-spec.md` — implementation spec for next agent (Vast/Prime; Shadeform §C pruned 2026-04-27 when the provider was dropped)
 - `docs/_internal/stars.md` — gitignored positioning doc
 - `docs/_internal/gpu-arbitrage-agent-prompt.md` — gitignored prompt for impl agent
 
@@ -114,13 +114,13 @@ Last big sweep: 2026-04-27.
 - `providers/base.py` — Provider Protocol + dataclasses
 - `providers/runpod.py` — refactor of runpod.py into class
 - `providers/vast.py` — per spec §A
-- `providers/primeintellect.py` — per spec §B
-- `providers/shadeform.py` — per spec §C
+- `providers/primeintellect.py` — per spec §B (pending; needs account)
+- `providers/datacrunch.py` — Verda Cloud (replaced the originally-planned shadeform.py — Shadeform dropped 2026-04-27 because no spot tier and no exclusive upstreams; Verda has both spot tier + EU geography)
 - `gpu.py` — top-level router with cooldown filter, --allow-on-demand gate
 - Migration 003: `preemption_events` table
 - Smoke-test additions for router with mocked providers
 - `docs/providers-setup.md` — account-setup checklists
-- `.env.example` updated for VAST/PRIME/SHADEFORM keys (already landed in repo)
+- `.env.example` updated for VAST/PRIME/DATACRUNCH keys (Shadeform removed 2026-04-27; Verda uses OAuth2 client_credentials, not a static API key)
 - `budget-reconcile.sh` updated to call `gpu.py reconcile` (already landed)
 
 ### Repo-organization research (background; just returned)

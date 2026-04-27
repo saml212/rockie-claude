@@ -58,8 +58,8 @@ framing is stale. See `LESSONS.md`.)
   `/propose-harness-change` skill packages improvements as PRs back
   to upstream idastone via Generator/Verifier/Updater role-separation.
 - **Provider-portable for compute.** `runpod.py` exists today;
-  `gpu.py` extends to Vast/Prime/Shadeform with cooldown-driven
-  hopping. Spend tracked against truthful provider state, not
+  `gpu.py` extends to Vast/Verda/Prime with cooldown-driven hopping.
+  Spend tracked against truthful provider state, not
   estimates.
 
 ## What idastone IS NOT
@@ -68,7 +68,7 @@ framing is stale. See `LESSONS.md`.)
   full LaTeX writeup pipelines. Out of scope.
 - **Not a sandbox.** smolagents-style AST executors are not real
   sandboxes. We don't pretend.
-- **Not a GPU-aggregation business.** Shadeform / Prime / SkyPilot
+- **Not a GPU-aggregation business.** Prime / SkyPilot / Foundry
   already commoditize that. Our value is autonomy reliability, not
   routing margin.
 - **Not multi-provider for the LLM** (yet — single-provider Claude
