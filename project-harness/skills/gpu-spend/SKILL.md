@@ -1,6 +1,6 @@
 ---
 name: gpu-spend
-description: When the user (or you) needs to know GPU spend across configured providers — "what's my burn rate?", "how much have I spent this week?", "is anything still running?", "am I close to budget?", "what's running idle?" — invoke this. Wraps `gpu.py cost --json` (cross-provider router) for accurate, reconciled numbers, then summarizes plus prints each provider's billing-page URL so the user can verify against the real billing UI in one click. ALWAYS prefer this over `runpod.py cost` or per-provider CLIs when reporting spend; the cross-provider router is the only surface that sees every dollar.
+description: When the user (or you) needs to know GPU spend across configured providers — "what's my burn rate?", "how much have I spent this week?", "is anything still running?", "am I close to budget?", "what's running idle?" — invoke this. Wraps `gpu.py cost --json` (cross-provider router) for accurate, reconciled numbers, then summarizes plus prints each provider's billing-page URL so the user can verify against the real billing UI in one click. ALWAYS prefer this over `runpod.py cost` or per-provider CLIs when reporting spend; the cross-provider router is the only surface that sees every dollar. **Custom-mode users:** if `IDASTONE_GPU_MODE=custom`, invoke `/gpu-custom` instead — `gpu.py cost` will exit with a bypass message in that mode.
 ---
 
 # /gpu-spend — cross-provider GPU spend snapshot
