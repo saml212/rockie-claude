@@ -76,9 +76,11 @@ The installer:
 See [docs/install.md](docs/install.md) for manual install and [docs/ntfy-setup.md](docs/ntfy-setup.md) for the push-notification setup (optional).
 
 **Verify the install works on your box** — `bash tests/smoke-test.sh` runs
-47 assertions (hook fires, FTS5 searches, atomic queue claim, installer
-idempotency, path-traversal refusal, budget-ceiling enforcement). CI runs
-the same suite on every push. ~10 seconds, no API key.
+69+ assertions (hook fires, FTS5 searches, atomic queue claim, installer
+idempotency, path-traversal refusal, budget-ceiling enforcement, autopilot
+end-to-end with mock launcher, schema-migration walker, autopilot.conf
+safe-parser refusals). CI runs the same suite on every push. ~10 seconds,
+no API key.
 
 ## What gets installed
 
@@ -159,9 +161,25 @@ supported vars and rotation guidance.
 
 ## Further reading
 
+For users of the harness:
+
 - [docs/quickstart.md](docs/quickstart.md) — 5-minute install + first commands
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — event flow + storage model
-- [docs/PORTS.md](docs/PORTS.md) — every competitor we read, source-cited
+- [docs/budgets.md](docs/budgets.md) — 4-dimension auto-tracking (tokens, tool_calls, wallclock_s, dollars)
+- [docs/environment.md](docs/environment.md) — `.env` pattern + rotation
 - [docs/ntfy-setup.md](docs/ntfy-setup.md) — push notifications setup
+- [docs/self-hosted-runner.md](docs/self-hosted-runner.md) — Mac mini runner + Claude-Max PR review
+- [docs/PORTS.md](docs/PORTS.md) — every competitor we read, source-cited
 - [SECURITY.md](SECURITY.md) — threat model + risk surfaces
 - [CHANGELOG.md](CHANGELOG.md) — what changed, by release
+
+For agents and contributors working on idastone itself:
+
+- [docs/_meta/README.md](docs/_meta/README.md) — meta-doc index + boundaries (start here)
+- [docs/_meta/PHILOSOPHY.md](docs/_meta/PHILOSOPHY.md) — what idastone is and is not, hard rules
+- [docs/_meta/USER_JOURNEYS.md](docs/_meta/USER_JOURNEYS.md) — researcher + agent flows
+- [docs/_meta/FEATURES.md](docs/_meta/FEATURES.md) — exhaustive built / partial / planned list
+- [docs/_meta/ROADMAP.md](docs/_meta/ROADMAP.md) — outstanding work, prioritized
+- [docs/_meta/DECISIONS.md](docs/_meta/DECISIONS.md) — architectural decisions log (append-only)
+- [docs/_meta/LESSONS.md](docs/_meta/LESSONS.md) — durable record of user feedback + audit findings
+- [docs/_meta/PLAN.md](docs/_meta/PLAN.md) — current snapshot of in-flight work
