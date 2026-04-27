@@ -260,12 +260,60 @@ credentials_wizard() {
     return 0
   fi
 
+  # Idempotent upsert of "KEY=VALUE" into target .env. Defined early so the
+  # mode-selection block below can use it.
+  _set_env_var() {
+    local key="$1" val="$2" file="$3"
+    if grep -E "^${key}=" "$file" >/dev/null 2>&1; then
+      sed -i.bak -E "s|^${key}=.*|${key}=${val}|" "$file" && rm -f "${file}.bak"
+    else
+      printf '%s=%s\n' "$key" "$val" >> "$file"
+    fi
+  }
+
   echo ""
   echo "──────────────────────────────────────────────────────────────"
-  echo " GPU provider setup"
+  echo " GPU provisioning mode"
   echo "──────────────────────────────────────────────────────────────"
-  echo "idastone provisions GPUs through one or more providers. Configure"
-  echo "at least one to use the agent's autonomous-provisioning loop."
+  echo "idastone can either drive GPU provisioning through its built-in"
+  echo "cross-provider router, OR step out of the way if you have your"
+  echo "own setup."
+  echo ""
+  echo "  router    — use idastone's RunPod/Vast/Prime/Verda router (default)"
+  echo "  custom    — bring your own (own AWS account, on-prem cluster,"
+  echo "              SSH tunnel, university, etc.); the agent will go"
+  echo "              through a one-time discovery flow on first GPU need"
+  echo "  none      — no GPU provisioning; running idastone for non-GPU work"
+  echo ""
+  printf "  Choose mode [router|custom|none] (default router): "
+  read -r mode
+  mode=$(echo "$mode" | tr 'A-Z' 'a-z')
+  case "$mode" in
+    custom)
+      _set_env_var IDASTONE_GPU_MODE custom "$target_env"
+      echo ""
+      echo "✓ custom mode set."
+      echo "  In your first agent session, the /gpu-custom-setup skill will"
+      echo "  walk through your provisioning flow once and save it to"
+      echo "  .claude/gpu-custom.md. Subsequent sessions reuse the saved flow."
+      return 0
+      ;;
+    none)
+      _set_env_var IDASTONE_GPU_MODE none "$target_env"
+      echo ""
+      echo "✓ GPU layer disabled. Set IDASTONE_GPU_MODE=router in $target_env"
+      echo "  if you change your mind later."
+      return 0
+      ;;
+    *)
+      _set_env_var IDASTONE_GPU_MODE router "$target_env"
+      ;;
+  esac
+
+  echo ""
+  echo "── GPU provider keys (router mode) ──"
+  echo "Configure at least one provider to use the autonomous-provisioning"
+  echo "loop:"
   echo ""
   echo "  1 provider  → single-provider works, no preemption survivability"
   echo "  2 providers → router hops on preemption; recommended for runs >1hr"

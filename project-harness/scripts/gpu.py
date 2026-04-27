@@ -909,7 +909,46 @@ def _add_providers_arg(p: argparse.ArgumentParser) -> None:
     )
 
 
+def _check_gpu_mode() -> int | None:
+    """Honor IDASTONE_GPU_MODE. Return an exit code to short-circuit
+    main() if the mode opts out of the router; None to continue.
+
+    Modes:
+      "router" / unset — default; cross-provider router (this script).
+      "custom"        — user has their own GPU setup; gpu.py is bypassed.
+                        Agent should reach for the /gpu-custom skill.
+      "none"          — no GPU layer at all. Smoke / docs / autopilot
+                        without compute provisioning.
+    """
+    mode = (os.environ.get("IDASTONE_GPU_MODE", "router") or "router").strip().lower()
+    if mode in ("router", ""):
+        return None
+    if mode == "custom":
+        print(
+            "[gpu] IDASTONE_GPU_MODE=custom — bypassing the cross-provider router.\n"
+            "      Your custom GPU setup is documented in .claude/gpu-custom.md\n"
+            "      (or run /gpu-custom-setup if you haven't completed onboarding).\n"
+            "      For agent-driven GPU operations in custom mode, use the\n"
+            "      /gpu-custom skill instead of this CLI.",
+            file=sys.stderr,
+        )
+        return 0
+    if mode == "none":
+        print(
+            "[gpu] IDASTONE_GPU_MODE=none — GPU layer disabled.\n"
+            "      Set IDASTONE_GPU_MODE=router (or unset) in .env to enable.",
+            file=sys.stderr,
+        )
+        return 0
+    print(f"[gpu] unknown IDASTONE_GPU_MODE={mode!r}; valid: router | custom | none", file=sys.stderr)
+    return 2
+
+
 def main() -> int:
+    rc = _check_gpu_mode()
+    if rc is not None:
+        return rc
+
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
