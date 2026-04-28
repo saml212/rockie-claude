@@ -1,15 +1,41 @@
 <!-- META:rockie-construction -->
 # Philosophy — what rockie is and is not
 
-## High-level goals (mirrored to user-facing README)
+## Tagline
 
-rockie is **the autonomous research harness that catches bugs before
-you burn GPU time, notices when it's stuck, tracks whether its
-predictions were right, and tells you honestly whether the idea was
-wrong or just the implementation.**
+**An Autonomous AI research assistant that rocks.**
 
-It is built around a **7-step research loop** that every cycle should
-make better:
+Inspired by Project Hail Mary's Rocky — the alien research partner
+you couldn't have built the answer without.
+
+## The four pillars (mirrored to user-facing README)
+
+rockie does four jobs, run continuously, until told to stop:
+
+1. **Captures research taste — and iterates on it.** A 5-minute
+   first-run interview compiles worldview / methodology / dismissals
+   / voice into a durable `.rockie/taste/` corpus that auto-loads
+   into every future session. Modes (`/mode switch <name>`) layer
+   operational overlays on top without changing identity.
+2. **Bulletproofs every step with adversarial subagent networks.**
+   Plan / Research / Build / Audit / Run / Assess / Codify — each
+   step has adversarial review built in. `/deploy-team` gauntlets,
+   `/clean` pre-commit sentinel, `/propose-harness-change`
+   Generator/Verifier/Updater split, stuck-detector + hypothesis
+   calibration + dead-end registry as background nudges.
+3. **Cheap, resource-efficient autonomy — indefinitely.** Local-first
+   SQLite + FTS5. Claude Max friendly (only GPU dollars are capped).
+   Spot-first GPU policy with provider-hop on preemption (RunPod /
+   Vast / Prime / Verda) before any bid bump. Designed to run for
+   days without human input.
+4. **Stays honest.** Catches bugs before they burn GPU time. Notices
+   when it's stuck (4 semantic-loop types). Tracks whether
+   predictions were right. Classifies every failure as
+   `bug | bad-hyperparam | bad-hypothesis`.
+
+## The 7-step loop
+
+Every cycle should make the next cycle better.
 
 ```
 Plan → Research → Build → Audit → Run → Assess → Codify
@@ -19,10 +45,11 @@ The harness's job is to make the loop reliable enough to run for
 days without human input, while staying honest about what it doesn't
 know.
 
-## The four ecosystem gaps rockie closes
+## The four ecosystem gaps rockie closes (differentiation pitch)
 
-These are the unique differentiators — the load-bearing pitch.
+These are the unique differentiators — the load-bearing OSS pitch.
 Anything that duplicates these gets rejected (see CONTRIBUTING.md).
+They map to pillars 2 and 4 above:
 
 1. **Pre-run code audit.** Every other harness reviews after a run
    burns compute. rockie audits *before* — `/deploy-team
@@ -42,6 +69,11 @@ Anything that duplicates these gets rejected (see CONTRIBUTING.md).
 We're still differentiated on the 3-value coarse pre-classifier
 feeding `[LEARN]/[DEAD-END]` routing, but the "nobody owns this"
 framing is stale. See `LESSONS.md`.)
+
+The fifth differentiator that emerged later (and isn't in
+competitor harnesses at all): **the researcher-taste corpus**
+(`/onboard` + `taste/` files). No other harness models the
+researcher.
 
 ## What rockie IS
 

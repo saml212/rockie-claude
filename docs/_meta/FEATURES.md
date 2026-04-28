@@ -74,6 +74,8 @@ Last big sweep: 2026-04-27.
 - `autopilot.conf` parser — allow-listed key=value, refuses $(…) and backticks (replaced shell-source)
 
 ### Skills (project-harness)
+- `/onboard` — researcher-taste interview → six-file `.rockie/taste/` corpus (SOUL/STYLE/METHODOLOGY/DISMISSALS/MEMORY/INDEX); two-tier (text Tier 1 + voice-first Tier 2 deep mode); structured-field draft.json + deterministic compile.py; auto-injects INDEX.md every SessionStart. Marquee differentiator — no other harness models the researcher.
+- `/mode` — swappable operational overlays (TOML) on top of the taste corpus; show/list/switch/new/edit/diff/seed; 5 built-in templates (default / paper-crunch / exploratory / dogfooding / learning); SessionStart conflict detection (mode prefers provider X but X_API_KEY unset, etc.); atomic _active rewrite
 - `/clean` — pre-commit anti-slop audit (--scope staged/dirty/since)
 - `/deploy-team` — Python orchestrator + 3 templates (gauntlet, pre-launch-audit, post-run-analysis)
 - `/post-run-review` — structured Assess→Codify (SKILL.md only; runtime is the agent)

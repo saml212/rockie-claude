@@ -221,3 +221,24 @@ repo. Two folders, two visibilities.
 capturing the harness's role as a research collaborator. Spelling with `ie`
 avoids the Rocky Linux name collision on GitHub.
 **Supersedes:** DEC-01.
+**Refined by:** DEC-21 (tagline shift to "An Autonomous AI research
+assistant that rocks").
+
+## DEC-21: Tagline refined to "An Autonomous AI research assistant that rocks"
+
+**Date:** 2026-04-28
+**Choice:** Tagline becomes "An Autonomous AI research assistant
+that rocks." Replaces "the AI research harness that rocks" from DEC-20.
+**Reasoning:** "Research assistant" emphasizes the Project Hail Mary
+Rocky reference more directly — Rocky was Grace's research *assistant*,
+not his harness. "Autonomous" front-loads the indefinite-iteration
+goal that the OSS framing should lead with. "Harness" is correct
+internal terminology but reads as plumbing to a first-time visitor;
+"research assistant" reads as collaborator. The user's stated four
+pillars (continuous cheap iteration, taste capture + iteration,
+resource-efficient indefinite autonomy, adversarial-network
+bulletproofing) are easier to pitch under the assistant framing.
+**Refines:** DEC-20.
+**README, PHILOSOPHY.md, install.sh banner** updated. Project name
+stays `rockie`; `IDASTONE_*` → `ROCKIE_*` env-var rename done in
+DEC-20 still stands.

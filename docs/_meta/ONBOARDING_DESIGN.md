@@ -8,7 +8,9 @@ research harness models the researcher.
 
 Sister to AGENTS.md (project-level contract). Where AGENTS.md tells an
 agent *what to do in this repo*, the `taste/` corpus tells an agent
-*who this researcher is and how they think*.
+*who this researcher is and how they think*. This is rockie's
+fifth differentiator (see PHILOSOPHY.md): no other harness models
+the researcher.
 
 ## Decisions (with sources)
 

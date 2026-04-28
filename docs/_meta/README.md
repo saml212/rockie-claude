@@ -35,23 +35,29 @@ why," not "how it works internally" or "what to ship next."
 | `ROADMAP.md` | Same | When picking the next thing to build |
 | `DECISIONS.md` | Same | When a question feels like it should have an answer already |
 | `LESSONS.md` | Same | Always — it's the durable record of user feedback + audit findings |
+| `ONBOARDING_DESIGN.md` | Same | Before touching the `/onboard` skill or taste corpus |
 | `PLAN.md` | Active session contributors | When you need a current snapshot of in-flight work |
 
 ## Crossover doctrine
 
 The following lives in **both** this meta-tree and the user-facing tree:
 
-1. **The four-gap pitch** (pre-run audit, semantic-loop detection,
-   hypothesis calibration, failure taxonomy). Lives here in
-   `PHILOSOPHY.md`; mirrors at the top of `README.md` and `STARS.md`.
-2. **The 7-step research loop** (Plan → Research → Build → Audit →
+1. **The tagline** — "An Autonomous AI research assistant that rocks."
+   Lives here in `PHILOSOPHY.md` and at the top of `README.md`.
+2. **The four pillars** (taste capture + iteration, adversarial-network
+   bulletproofing, cheap indefinite autonomy, staying honest). Same —
+   `PHILOSOPHY.md` here; mirrored in `README.md`.
+3. **The four-gap differentiation pitch** (pre-run audit, semantic-loop
+   detection, hypothesis calibration, failure taxonomy). Same — these
+   are the OSS-positioning differentiators that map to pillars 2 and 4.
+4. **The 7-step research loop** (Plan → Research → Build → Audit →
    Run → Assess → Codify). Same — `PHILOSOPHY.md` here; mirrored in
    `claude-md/CLAUDE.md.template`.
-3. **The differentiator list** (FTS5 `[LEARN]` DB, waterfall,
+5. **The differentiator list** (FTS5 `[LEARN]` DB, waterfall,
    pre-experiment checklist, ntfy preemption recovery, living-doc
    pattern, `experiment-runs/`, `/deploy-team`, pre-commit sentinel,
-   doc-guard). Same — referenced from CONTRIBUTING.md as
-   "duplicates get rejected."
+   doc-guard, taste corpus, modes). Same — referenced from
+   CONTRIBUTING.md as "duplicates get rejected."
 
 ## How meta-docs stay current
 
