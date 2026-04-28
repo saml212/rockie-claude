@@ -191,6 +191,150 @@ When `/deploy-team` runs the gauntlet on this design (see § next):
 - **Validator** — for each attack, do we have a mitigation, or is the
   attack accepted as known-limitation?
 
+## Modes — small swappable overlays on the central corpus
+
+Modes are how a researcher who works across multiple contexts (paper
+deadlines, exploratory tinkering, teaching, neuroscience side
+projects) tells the harness how *this session's* operational policy
+differs from their stable identity.
+
+**Identity is centralized.** SOUL/STYLE/METHODOLOGY/DISMISSALS/MEMORY
+stay as one canonical corpus. The researcher does not split their
+identity into per-area silos. (We considered profiles — see
+discarded-design notes.)
+
+**Modes are overlays.** A mode is a small TOML file at
+`.idastone/taste/modes/<name>.toml`. The active mode is named in
+`.idastone/taste/modes/_active` (one line, plain text). SessionStart
+reads both and surfaces a compact summary alongside INDEX.md.
+
+A mode CAN override specific fields (e.g.,
+`methodology.success_criteria`, `risk.sanity_check_above_dollars`).
+A mode CAN add operational fields not in the central corpus
+(`workflow.scope_lock`, `deadline.target_date`,
+`hardware.preferred_provider`).
+
+A mode CANNOT override core identity (SOUL/STYLE entries) — that's
+why those live in the central corpus.
+
+### Mode TOML schema
+
+Every field is optional. Modes ship lean.
+
+```toml
+name = "<short slug — matches filename>"
+description = "<one sentence>"
+
+[hardware]
+preferred_provider = "runpod" | "vast" | "prime" | "verda"
+hardware_type = "H100" | "A100" | "H200"
+spot_only = true | false
+on_demand_allowed = true | false
+gpu_budget_dollars_per_session = 50
+
+[reading]
+focus_arxiv_categories = ["cs.LG", "cs.CL"]
+exclude_categories = ["q-bio.NC"]
+recency_window_months = 6
+prefer_venues = ["NeurIPS", "ICML", "ICLR-Workshop"]
+
+[methodology]
+success_criteria_override = "<prose>"
+required_ablations = ["param-matched-flat", "compute-matched-rank-1"]
+allow_negative_result = true
+
+[risk]
+sanity_check_above_dollars = 10
+session_max_dollars = 80
+require_smoke_before_real_run = true
+
+[output]
+register = "formal-paper" | "lab-notebook" | "teaching" | "code-comment"
+default_target = "ICML 2026 MI Workshop submission"
+
+[workflow]
+scope_lock = true
+require_clean_before_commit = true
+require_audit_subagent_before_train = true
+prefer_opus_for = ["attack", "novelty-check"]
+prefer_sonnet_for = ["fix-list", "research-collation"]
+
+[dismissals]
+active_categories = ["ml-architectural"]   # which DISMISSALS.md tags
+                                            # are load-bearing this mode
+
+[deadline]
+target_date = "YYYY-MM-DD"
+scope_lock = true
+```
+
+### Override semantics
+
+When agent code or a hook needs a value (e.g., the GPU spend ceiling):
+
+1. Active mode has the field → use it.
+2. Otherwise, central corpus has the field (e.g.,
+   `INDEX.md` `risk_threshold`) → use it.
+3. Otherwise, fall back to harness default.
+
+This is layered look-up, not merge-and-rewrite. The on-disk corpus is
+not modified by mode switches.
+
+### Built-in mode templates
+
+Idastone ships these in
+`project-harness/skills/mode/templates/`. The installer copies them
+into `.idastone/taste/modes/` on first run if the directory doesn't
+yet exist.
+
+- `default.toml` — empty overlay; baseline.
+- `paper-crunch.toml` — deadline-locked: scope_lock, formal register,
+  required ablations, smoke gates, opus on review/attack.
+- `exploratory.toml` — opposite: no scope lock, broader reading
+  window, sonnet-first, register="lab-notebook".
+- `dogfooding.toml` — for harness self-modification: small budgets,
+  fast iterations, looser gates so the tester can move fast.
+- `learning.toml` — register="teaching", deeper-explanation rules,
+  methodology gates relaxed.
+
+Researchers customize by copying a template and editing, or invoking
+`/mode new <name>` for an interview-driven creation flow.
+
+### `/mode` skill commands
+
+- `/mode show` — print active mode + the overlay diff against central.
+- `/mode list` — show all modes with their one-line descriptions.
+- `/mode switch <name>` — atomic write to `_active`.
+- `/mode new <name> [--from <template>]` — copy from template (or
+  blank), open in editor.
+- `/mode edit <name>` — open existing mode in editor.
+- `/mode diff <a> <b>` — compare two modes.
+
+### Conflict detection at SessionStart
+
+When mode is loaded, surface obvious mismatches:
+- mode requires `hardware.preferred_provider = "runpod"` but
+  `RUNPOD_API_KEY` is unset → WARN.
+- mode says `spot_only = true` but `IDASTONE_GPU_MODE = none` →
+  WARN.
+- mode references `dismissals.active_categories = ["X"]` and no
+  DISMISSALS.md entry has tag `[X]` → WARN.
+
+Warnings are advisory, not blocking. The agent surfaces them with
+the rest of the SessionStart report.
+
+### Discarded: per-area profiles
+
+We considered separate per-area corpora (
+`.idastone/taste/{ml-research,neuro}/...`), then rejected:
+- A researcher's identity (SOUL.md, STYLE.md) doesn't fork by
+  research area; only operational policy does.
+- Forces redundant onboarding interviews per area.
+- Loses cross-area learning signal in the [LEARN] DB.
+- Modes are smaller, easier to swap mid-session.
+
+Modes are the smaller, more composable abstraction.
+
 ## Dogfood plan
 
 Test the prompt by having a fresh agent (the interviewer) interview
