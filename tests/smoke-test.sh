@@ -419,7 +419,7 @@ cfg = json.loads(pathlib.Path(sys.argv[1], ".claude/settings.json").read_text())
 assert cfg["permissions"]["allow"] == ["Bash(ls:*)"], "permissions clobbered"
 stop_cmds = [h["command"] for blk in cfg["hooks"].get("Stop", []) for h in blk.get("hooks", [])]
 assert "bash .claude/hooks/preexisting.sh" in stop_cmds, "pre-existing hook dropped"
-assert "bash .claude/hooks/learn-capture.sh" in stop_cmds, "rockie learn-capture not added"
+assert "bash $CLAUDE_PROJECT_DIR/.claude/hooks/learn-capture.sh" in stop_cmds, "rockie learn-capture not added"
 PY
 rm -rf "$MERGE_TEST"
 
@@ -431,7 +431,7 @@ bash "$ROCKIE/install.sh" --project-only --yes "$IDEM" >/dev/null 2>&1
 COUNT=$(python3 -c '
 import json; d=json.load(open("'"$IDEM"'/.claude/settings.json"))
 stop=[h["command"] for blk in d["hooks"].get("Stop", []) for h in blk.get("hooks", [])]
-print(stop.count("bash .claude/hooks/learn-capture.sh"))')
+print(stop.count("bash $CLAUDE_PROJECT_DIR/.claude/hooks/learn-capture.sh"))')
 assert "installer is idempotent (no hook duplication on re-run)" "1" "$COUNT"
 rm -rf "$IDEM"
 
