@@ -42,7 +42,7 @@ Read recent context to identify candidates:
 
 ```bash
 # [LEARN] rows added this session
-sqlite3 .claude/memory/workflow.db "
+sqlite3 ${OPENCLAW_WORKSPACE_DIR}/memory/workflow.db "
   SELECT category, rule, mistake, correction
   FROM learnings
   WHERE created_at >= datetime('now','-6 hours')
@@ -53,7 +53,7 @@ sqlite3 .claude/memory/workflow.db "
 git log --since='6 hours ago' --name-only --pretty=format:'%h %s'
 
 # Any new skill / hook / script files
-git diff --name-only HEAD~5..HEAD -- '.claude/skills/' '.claude/hooks/' '.claude/scripts/' \
+git diff --name-only HEAD~5..HEAD -- '${OPENCLAW_SKILLS_DIR}/' '${OPENCLAW_WORKSPACE_DIR}/hooks/' '${OPENCLAW_WORKSPACE_DIR}/scripts/' \
   | grep -E '\.(md|sh|py)$' || true
 ```
 
