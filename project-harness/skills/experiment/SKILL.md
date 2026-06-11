@@ -1,12 +1,25 @@
 ---
 name: experiment
-description: Run a materials-science / ML compute job on Pebble ML's GPU fleet. Trigger words "run experiment", "submit job", "/experiment". Picks the right GPU type and count from a natural-language description (DFT for QE/VASP/ABINIT, MD for GROMACS/LAMMPS/OpenMM, training for PyTorch/JAX), generates the script, posts it to `POST $ROCKIELAB_API_URL/api/jobs/submit`, polls status, streams logs, and surfaces the final artifacts. Use this for anything that needs a GPU — single A100 up to multi-pod B200 clusters.
+description: Run a materials-science / ML compute job on Rockie GPU capacity. Trigger words "run experiment", "submit job", "/experiment". Picks the right GPU type and count from a natural-language description (DFT for QE/VASP/ABINIT, MD for GROMACS/LAMMPS/OpenMM, training for PyTorch/JAX), generates the script, routes Rockie-originated submits through `/budget-term-sheet` plus `runtime/submit.py`, polls status, streams logs, and surfaces the final artifacts. Use this for anything that needs a GPU — single A100 up to multi-pod B200 clusters.
 ---
 
 # /experiment — submit a GPU job
 
 Wraps the Phase 5 job runner. The agent decides the GPU shape, writes
 the script, hands it to platform-context, and tails the run.
+
+## Local execution FORBIDDEN
+
+Torch / triton / CUDA execution, weight downloads (HF), training,
+fine-tuning, heavy synthetic-data generation NEVER run on the
+orchestrator host or the Fly tenant runtime — they run ONLY on the
+Rockie GPU pod that this skill provisions.
+
+The PreToolUse hook `role-pre-bash-guard.sh` blocks such Bash invocations
+on the orchestrator; the runtime image's `torch/__init__.py` (plus
+`triton`, `tensorflow`, `jax`) stub raises on import inside Fly tenants.
+Both layers point at `POST $ROCKIELAB_API_URL/api/jobs/submit` with a
+base64-encoded script. See rockie-workspace#457.
 
 ## When to invoke
 
@@ -47,6 +60,7 @@ the env and trigger `/gpu-custom-setup` for the one-time flow audit.
 
 | Workload | Default | Notes |
 |---|---|---|
+| Smoke tests / 1-step training slices | 1x A40_48GB | Cheapest A-series; for cost-bounded slices that need a real GPU but not real perf. |
 | QE / VASP / ABINIT DFT, single SCF | 1x A100_80GB | Most DFT fits in 80GB. |
 | Large-cell DFT (>500 atoms) | 4x A100_80GB | Needs MPI, use Instant Cluster. |
 | AIMD (BOMD with QE/CP2K) | 2x A100_80GB | I/O-bound; 2 pods is cheaper than 1xH100. |
@@ -71,21 +85,66 @@ Always end the script with: tar the results dir to `/workspace/results.tar.gz`, 
 
 ## Submitting
 
-Call the helper at `runtime/submit.py` (don't shell out to curl
+Before any Rockie-originated submit, invoke `/budget-term-sheet`, render
+the quote, and wait for explicit user approval. Hand the approved JSON
+artifact to `runtime/submit.py` (don't shell out to curl
 directly — the helper handles the credit-balance pre-check, the
-state-machine polling, and the SSE log tail):
+state-machine polling, the SSE log tail, the budget-term-sheet gate,
+and the dashboard Note metadata/profile snapshot packaging):
 
 ```bash
 python3 ${SKILL_DIR}/runtime/submit.py \
     --gpu-type A100_80GB \
     --gpu-count 1 \
+    --region us \
+    --tier spot \
     --script-file /tmp/experiment.sh \
-    --timeout 14400
+    --timeout 14400 \
+    --term-sheet-json /tmp/term-sheet.approved.json
 ```
 
-Required env: `ROCKIELAB_API_URL` (e.g. `https://api.rockielab.com`)
-and `ROCKIELAB_TENANT_TOKEN` (per-tenant). The submit helper exits
-with the job's exit code (0 = DONE, non-zero = FAILED/CANCELLED).
+Required env: `ROCKIELAB_API_URL` (e.g. `https://api.rockielab.com`),
+`ROCKIELAB_TENANT_ID`, and `ROCKIELAB_TENANT_TOKEN`. The token
+authenticates the request; it is not tenant identity, and the helper
+does not fall back to an implicit tenant. The submit helper exits with
+the job's exit code (0 = DONE, non-zero = FAILED/CANCELLED).
+
+Budget gate contract:
+
+- `--term-sheet-json` is required by default for Rockie-authored submits.
+- The helper only accepts final term-sheet decisions `approve` or
+  `modify_then_approve` when the term sheet is available, approvable,
+  and explicitly approved for submit.
+- The approved term sheet must include and match submit GPU type/count,
+  `compute.region`, `compute.tier`, and quoted wallclock. Pass matching
+  `--region` and `--tier`; omitting or changing either field refuses
+  submit locally.
+- If the final budget is below `estimate_cents`, the helper refuses
+  locally before the HTTP submit.
+- Approved term sheets must include `user_budget_cents`; the helper
+  refuses to fall back to `recommended_budget_cents` for submit.
+- `--allow-ungated-submit` exists only for legacy/manual paths; do not
+  use it in normal Rockie skill flows.
+- Optional `--budget-cents` is only an assertion and must exactly equal
+  the approved term sheet's `user_budget_cents`.
+
+Dashboard Note contract:
+
+- Pass `--notebook-id <notebook:...>` when the run belongs to a lab note flow.
+- When a notebook id is present, the helper sends a `dashboard` payload
+  with `run_name`, `origin_skill`, `software`, `monitoring_profile_id`,
+  and a frozen `monitoring_profile_snapshot`. Runs without notebook
+  context remain legacy job submissions and omit the dashboard block.
+- Default `origin_skill` is `experiment`.
+- If you do not set `--monitoring-profile-id`, the helper infers one from
+  the script/software when possible and otherwise falls back to
+  `common.default.v1` with `unprofiled=true` recorded in the snapshot.
+- For PyTorch/JAX training and generic ML experiments, prefer
+  `experiment.ml_baseline.v1`.
+- For physics plans, pass the exact physics profile id already attached
+  by the physics router; the helper can also infer representative
+  adapters such as `physics.molecular_dynamics.v1` for GROMACS/LAMMPS or
+  `physics.electronic_structure.v1` for QE/CP2K/ABINIT scripts.
 
 ## Surfacing results
 
@@ -93,7 +152,9 @@ After `submit.py` returns, fetch the artifact list:
 
 ```bash
 curl -s "$ROCKIELAB_API_URL/api/jobs/${JOB_ID}/artifacts" \
-    -H "X-Tenant-Token: $ROCKIELAB_TENANT_TOKEN"
+    -H "User-Agent: rockie-runtime/1.0 (+https://api.rockielab.com)" \
+    -H "X-Tenant-Token: $ROCKIELAB_TENANT_TOKEN" \
+    -H "X-Tenant-Id: $ROCKIELAB_TENANT_ID"
 ```
 
 Each artifact has a `signed_url` (1h TTL). Surface them to the user
@@ -104,13 +165,43 @@ with sizes; do NOT auto-download large files unless asked.
 Before submitting, check the credit balance:
 
 ```bash
-curl -s "$ROCKIELAB_API_URL/api/jobs/credit-balance?tenant_id=$TID" \
-    -H "X-Tenant-Token: $ROCKIELAB_TENANT_TOKEN"
+curl -s "$ROCKIELAB_API_URL/api/jobs/credit-balance?tenant_id=$ROCKIELAB_TENANT_ID" \
+    -H "User-Agent: rockie-runtime/1.0 (+https://api.rockielab.com)" \
+    -H "X-Tenant-Token: $ROCKIELAB_TENANT_TOKEN" \
+    -H "X-Tenant-Id: $ROCKIELAB_TENANT_ID"
 ```
+
+Do not infer the tenant from the token or use an implicit self tenant.
 
 If the projected cost (timeout × marked-up rate × gpu_count + overhead)
 exceeds the balance, tell the user and offer to top up via Stripe
 Checkout (the `/compute` page has the buttons).
+
+## Phase 9/10 secrets canary dogfood
+
+When this skill is used to dogfood runtime secrets changes, the canary
+run must cover the full lifecycle without recording any secret value in
+this repository, prompts, transcripts, logs, argv, or UI exports:
+
+1. Set an explicit `ROCKIELAB_TENANT_ID` and use a tenant token only for
+   authentication.
+2. Save a fresh canary secret through the lab-chat `save_secret`
+   control flow, not a normal prompt or generic tool result.
+3. Resolve the canary by name and confirm the resolve envelope accounts
+   for every requested name with category data and no extra names.
+4. Run the exact accepted form, such as `echo $NAME | head -c N`, and
+   confirm the visible result is only the redacted marker or structured
+   success proof. It must not include a prefix, length oracle, checksum,
+   hash, or any other secret-derived proof.
+5. Run rejected forms that try quotes, redirects, additional pipelines,
+   command substitution, shell operators, env prefixes, missing names,
+   duplicate names, extra names, omitted names, and non-`ssh_key` key
+   material. Each must fail before secret material reaches a child
+   process.
+6. Check transcripts, websocket/tool payloads, UI exports, broker and
+   context logs, stdout/stderr summaries, background updates,
+   notify-on-exit text, and final local process argv for the canary
+   value and partial variants. Only approved redacted markers may remain.
 
 ## Output template
 
@@ -142,7 +233,9 @@ echo "JOB_DONE"
 SH
 python3 ${SKILL_DIR}/runtime/submit.py \
     --gpu-type A100_80GB --gpu-count 1 \
-    --script-file /tmp/dft.sh --timeout 3600
+    --region us --tier spot \
+    --script-file /tmp/dft.sh --timeout 3600 \
+    --term-sheet-json /tmp/dft.term-sheet.approved.json
 ```
 
 The artifact list will surface `silicon.out` (the SCF energy is on the
@@ -169,5 +262,7 @@ echo "JOB_DONE"
 SH
 python3 ${SKILL_DIR}/runtime/submit.py \
     --gpu-type A100_80GB --gpu-count 1 \
-    --script-file /tmp/md.sh --timeout 7200
+    --region us --tier spot \
+    --script-file /tmp/md.sh --timeout 7200 \
+    --term-sheet-json /tmp/md.term-sheet.approved.json
 ```
